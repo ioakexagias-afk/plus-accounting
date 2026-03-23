@@ -456,6 +456,101 @@ function SectionTitle({ children }) {
   );
 }
 
+
+/* ─── Password stored in env or hardcoded fallback ──────────────────────── */
+// To change password: set REACT_APP_PASSWORD in Vercel environment variables
+const APP_PASSWORD = process.env.REACT_APP_PASSWORD || "plusaccounting2024";
+const AUTH_KEY = "pa_session_auth";
+
+function LoginGate({ children }) {
+  const [authed,   setAuthed]   = useState(() => sessionStorage.getItem(AUTH_KEY) === "1");
+  const [input,    setInput]    = useState("");
+  const [error,    setError]    = useState(false);
+  const [showPwd,  setShowPwd]  = useState(false);
+
+  if (authed) return children;
+
+  function handleLogin(e) {
+    e.preventDefault();
+    if (input === APP_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, "1");
+      setAuthed(true);
+    } else {
+      setError(true);
+      setInput("");
+      setTimeout(() => setError(false), 2500);
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight:"100vh", background:"#F0F5FA",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontFamily:"'Palatino Linotype','Book Antiqua',Georgia,serif",
+    }}>
+      <div style={{ background:"#fff", borderRadius:14, padding:"40px 44px",
+        boxShadow:"0 8px 40px rgba(26,60,94,.18)", width:"100%", maxWidth:380,
+        textAlign:"center" }}>
+
+        {/* Logo */}
+        <div style={{ width:54, height:54, background:"#C8962A", borderRadius:12,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontWeight:900, fontSize:26, color:"#fff", margin:"0 auto 16px" }}>P</div>
+
+        <div style={{ fontWeight:700, fontSize:20, color:"#1A3C5E",
+          letterSpacing:1, marginBottom:4 }}>PLUS ACCOUNTING</div>
+        <div style={{ fontSize:12, color:"#667788", letterSpacing:2,
+          textTransform:"uppercase", marginBottom:32 }}>Document Generator</div>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ position:"relative", marginBottom:16 }}>
+            <input
+              type={showPwd ? "text" : "password"}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Κωδικός πρόσβασης"
+              autoFocus
+              style={{
+                width:"100%", padding:"11px 44px 11px 16px",
+                border:"2px solid " + (error ? "#FC8181" : "#C8D8E8"),
+                borderRadius:8, fontSize:15, color:"#111",
+                background: error ? "#FFF5F5" : "#FAFCFF",
+                boxSizing:"border-box", fontFamily:"inherit",
+                outline:"none", transition:"border .2s",
+              }}
+            />
+            <button type="button" onClick={() => setShowPwd(v => !v)}
+              style={{ position:"absolute", right:12, top:"50%",
+                transform:"translateY(-50%)", background:"none", border:"none",
+                cursor:"pointer", fontSize:16, color:"#999", padding:0 }}>
+              {showPwd ? "🙈" : "👁"}
+            </button>
+          </div>
+
+          {error && (
+            <div style={{ color:"#C53030", fontSize:13, marginBottom:12,
+              padding:"8px 12px", background:"#FFF5F5", borderRadius:6 }}>
+              ⚠ Λάθος κωδικός. Δοκιμάστε ξανά.
+            </div>
+          )}
+
+          <button type="submit" style={{
+            width:"100%", padding:"12px", background:"#1A3C5E", color:"#fff",
+            border:"none", borderRadius:8, fontSize:15, fontWeight:700,
+            cursor:"pointer", fontFamily:"inherit",
+          }}>
+            Είσοδος →
+          </button>
+        </form>
+
+        <div style={{ marginTop:20, fontSize:11, color:"#aaa" }}>
+          Για αλλαγή κωδικού: Vercel → Settings → Environment Variables → REACT_APP_PASSWORD
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Service lines component ────────────────────────────────────────────── */
 function ServiceLines({ lines, setLines, packages }) {
   function updateLine(id, field, val) {
@@ -767,6 +862,7 @@ export default function App() {
 
   /* ── render ── */
   return (
+    <LoginGate>
     <div style={{ minHeight:"100vh", background:BG,
       fontFamily:"'Palatino Linotype','Book Antiqua',Georgia,serif" }}>
 
@@ -1483,5 +1579,6 @@ export default function App() {
         </Modal>
       )}
     </div>
+    </LoginGate>
   );
 }
