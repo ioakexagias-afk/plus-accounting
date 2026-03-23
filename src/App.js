@@ -38,6 +38,53 @@ const PKGS0 = [
     desc:"Μηνιαία υποβολή συγκεντρωτικών καταστάσεων", price:60, vat:24 },
 ];
 
+/* ─── Default contract articles template ─────────────────────────────────── */
+// type: "dynamic" = auto-filled from form data, "static" = free text
+const ARTICLES0 = [
+  {
+    id: "a1", order: 1, type: "dynamic",
+    title: "ΑΡΘΡΟ 1 — ΑΝΤΙΚΕΙΜΕΝΟ ΣΥΜΒΑΣΗΣ",
+    content: "",
+    hint: "Συμπληρώνεται αυτόματα από τις επιλεγμένες υπηρεσίες",
+  },
+  {
+    id: "a2", order: 2, type: "dynamic",
+    title: "ΑΡΘΡΟ 2 — ΑΜΟΙΒΗ / REMUNERATION",
+    content: "",
+    hint: "Συμπληρώνεται αυτόματα από την τιμή και τον τρόπο πληρωμής",
+  },
+  {
+    id: "a3", order: 3, type: "dynamic",
+    title: "ΑΡΘΡΟ 3 — ΔΙΑΡΚΕΙΑ / DURATION",
+    content: "",
+    hint: "Συμπληρώνεται αυτόματα από τις ημερομηνίες",
+  },
+  {
+    id: "a4", order: 4, type: "static",
+    title: "ΑΡΘΡΟ 4 — ΥΠΟΧΡΕΩΣΕΙΣ ΜΕΡΩΝ",
+    content: "Ο Εντολέας υποχρεούται να χορηγεί έγκαιρα τα απαραίτητα παραστατικά και στοιχεία που απαιτούνται για την εκτέλεση των εργασιών.\n\nΟ Ανάδοχος υποχρεούται να τηρεί εχεμύθεια ως προς τα οικονομικά στοιχεία και δεδομένα του Εντολέα.",
+    hint: "",
+  },
+  {
+    id: "a5", order: 5, type: "static",
+    title: "ΑΡΘΡΟ 5 — ΛΥΣΗ ΣΥΜΒΑΣΗΣ",
+    content: "Η σύμβαση δύναται να καταγγελθεί από οποιοδήποτε μέρος με έγγραφη ειδοποίηση τριάντα (30) ημερών. Σε περίπτωση καταγγελίας, ο Εντολέας υποχρεούται να εξοφλήσει τις οφειλόμενες αμοιβές μέχρι την ημερομηνία λύσης της σύμβασης.",
+    hint: "",
+  },
+  {
+    id: "a6", order: 6, type: "static",
+    title: "ΑΡΘΡΟ 6 — ΕΦΑΡΜΟΣΤΕΟ ΔΙΚΑΙΟ",
+    content: "Η παρούσα σύμβαση διέπεται από το Ελληνικό Δίκαιο. Για κάθε διαφορά που τυχόν ανακύψει από την παρούσα σύμβαση, αρμόδια ορίζονται τα Δικαστήρια της Αθήνας.",
+    hint: "",
+  },
+  {
+    id: "a-close", order: 99, type: "closing",
+    title: "ΚΛΕΙΣΙΜΟ",
+    content: "Το παρόν συντάχθηκε σε δύο (2) αντίτυπα και κάθε συμβαλλόμενος έλαβε από ένα (1) πρωτότυπο.",
+    hint: "Εμφανίζεται πριν τις υπογραφές",
+  },
+];
+
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"" });
 const lsGet    = (k,fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
@@ -212,24 +259,44 @@ function buildDocHtml(d, logo) {
       ["Β) Εντολέας",        client.name + "  |  ΑΦΜ: " + client.afm + "  |  " + client.doy],
       ["Διεύθυνση Εντολέα",  client.address],
     ];
+
+    const allArts   = d.articles || ARTICLES0;
+    const arts      = allArts.filter(a => a.id !== "a-close").sort((a,b) => a.order - b.order);
+    const closingArt = allArts.find(a => a.id === "a-close");
+
+    let articlesHtml = "";
+    arts.forEach(function(art) {
+      articlesHtml += sec(art.title);
+      if (art.type === "dynamic") {
+        if (art.id === "a1") {
+          articlesHtml += svcTable;
+        } else if (art.id === "a2") {
+          articlesHtml += pp("Τρόπος πληρωμής / Payment: " + payMethod);
+        } else if (art.id === "a3") {
+          articlesHtml += pp("Έναρξη / Start: " + fmtD(startDate));
+          articlesHtml += pp("Διάρκεια / Duration: " + duration);
+          articlesHtml += pp("Η σύμβαση παρατείνεται αυτόματα εκτός εάν καταγγελθεί εγγράφως με 30 ημέρες προειδοποίηση.");
+        }
+      } else {
+        (art.content || "").split("\n").filter(t => t.trim()).forEach(function(line) {
+          articlesHtml += pp(line);
+        });
+      }
+    });
+
+    if (notes) {
+      articlesHtml += sec("ΠΑΡΑΤΗΡΗΣΕΙΣ / ADDITIONAL NOTES") + pp(notes);
+    }
+
+    const closingText = closingArt ? closingArt.content
+      : "Το παρόν συντάχθηκε σε δύο (2) αντίτυπα και κάθε συμβαλλόμενος έλαβε από ένα (1) πρωτότυπο.";
+
     body =
       pp("Στην Αθήνα, σήμερα " + fmtD(docDate) + ", μεταξύ των:") +
       infoBox(partyARows) +
       pp("συμφωνήθηκαν και έγιναν αμοιβαία αποδεκτά τα εξής:", "font-style:italic;color:#555;") +
-      sec("ΑΡΘΡΟ 1 — ΑΝΤΙΚΕΙΜΕΝΟ ΣΥΜΒΑΣΗΣ") +
-      svcTable +
-      sec("ΑΡΘΡΟ 2 — ΑΜΟΙΒΗ / REMUNERATION") +
-      pp("Τρόπος πληρωμής / Payment: " + payMethod) +
-      sec("ΑΡΘΡΟ 3 — ΔΙΑΡΚΕΙΑ / DURATION") +
-      pp("Έναρξη / Start: " + fmtD(startDate)) +
-      pp("Διάρκεια / Duration: " + duration) +
-      pp("Η σύμβαση παρατείνεται αυτόματα εκτός εάν καταγγελθεί εγγράφως με 30 ημέρες προειδοποίηση.") +
-      sec("ΑΡΘΡΟ 4 — ΥΠΟΧΡΕΩΣΕΙΣ ΜΕΡΩΝ") +
-      pp("Ο Εντολέας υποχρεούται να χορηγεί έγκαιρα τα απαραίτητα παραστατικά και στοιχεία.") +
-      pp("Ο Ανάδοχος υποχρεούται να τηρεί εχεμύθεια ως προς τα οικονομικά στοιχεία του Εντολέα.") +
-      (notes ? sec("ΑΡΘΡΟ 5 — ΛΟΙΠΕΣ ΣΥΜΦΩΝΙΕΣ") + pp(notes) : "") +
-      pp("Το παρόν συντάχθηκε σε δύο (2) αντίτυπα και κάθε συμβαλλόμενος έλαβε από ένα (1) πρωτότυπο.",
-         "font-style:italic;color:#555;margin-top:20px;") +
+      articlesHtml +
+      pp(closingText, "font-style:italic;color:#555;margin-top:20px;") +
       sigTable("Ο ΑΝΑΔΟΧΟΣ", "Ο ΕΝΤΟΛΕΑΣ");
   }
 
@@ -522,6 +589,7 @@ export default function App() {
   const [logo,      setLogo]      = useState(() => lsGet("pa_logo",     null));
   const [clients,   setClients]   = useState(() => lsGet("pa_clients",  CLIENTS0));
   const [packages,  setPackages]  = useState(() => lsGet("pa_packages", PKGS0));
+  const [articles,  setArticles]  = useState(() => lsGet("pa_articles", ARTICLES0));
   const [history,   setHistory]   = useState(() => lsGet("pa_history",  []));
 
   const [docType,   setDocType]   = useState("prosfora");
@@ -537,6 +605,7 @@ export default function App() {
   const [showCM,      setShowCM]      = useState(false);
   const [showPM,      setShowPM]      = useState(false);
   const [showFM,      setShowFM]      = useState(false);
+  const [showAM,      setShowAM]      = useState(false);
   const [editingPkg,  setEditingPkg]  = useState(null);
   const [editDoc,     setEditDoc]     = useState(null);
   const [status,      setStatus]      = useState({ msg:"", type:"" });
@@ -551,6 +620,7 @@ export default function App() {
   useEffect(() => lsSet("pa_firm",     firm),     [firm]);
   useEffect(() => lsSet("pa_clients",  clients),  [clients]);
   useEffect(() => lsSet("pa_packages", packages), [packages]);
+  useEffect(() => lsSet("pa_articles", articles), [articles]);
   useEffect(() => lsSet("pa_history",  history),  [history]);
   useEffect(() => { if (logo) lsSet("pa_logo", logo); }, [logo]);
 
@@ -585,6 +655,7 @@ export default function App() {
         firm,      client:c,
         lines:     histDoc.lines || [],
         packages,
+        articles,
         payMethod: histDoc.payMethod  || "μηνιαίως",
         validDays: histDoc.validDays  || "30",
         startDate: histDoc.startDate  || histDoc.date,
@@ -592,7 +663,7 @@ export default function App() {
         notes:     histDoc.notes      || "",
       };
     }
-    return { docType, docNo, docDate, firm, client, lines, packages,
+    return { docType, docNo, docDate, firm, client, lines, packages, articles,
              payMethod, validDays, startDate, duration, notes };
   }
 
@@ -1033,6 +1104,21 @@ export default function App() {
               </div>
             </Card>
 
+            {/* Articles template link */}
+            <div style={{ background:GOLDL, border:"1px solid "+GOLD, borderRadius:10,
+              padding:"16px 20px", display:"flex", justifyContent:"space-between",
+              alignItems:"center" }}>
+              <div>
+                <div style={{ fontWeight:700, color:NAVY, marginBottom:4 }}>
+                  📜 Πρότυπο Ιδιωτικού Συμφωνητικού
+                </div>
+                <div style={{ fontSize:12, color:MUTED }}>
+                  Επεξεργασία άρθρων, σταθερού κειμένου και κλεισίματος
+                </div>
+              </div>
+              <Btn variant="gold" onClick={() => setShowAM(true)}>✎ Επεξεργασία Άρθρων</Btn>
+            </div>
+
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
               {/* clients */}
               <Card>
@@ -1217,6 +1303,141 @@ export default function App() {
             <Btn variant="primary" onClick={savePkg} disabled={!pf.name}>
               {editingPkg ? "Αποθήκευση αλλαγών" : "Προσθήκη"}
             </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Articles Modal ── */}
+      {showAM && (
+        <Modal title="📜 Πρότυπο Ιδιωτικού Συμφωνητικού" onClose={() => setShowAM(false)} wide>
+          <div style={{ marginBottom:16, padding:"10px 14px", background:LIGHT,
+            borderRadius:8, fontSize:13, color:ACCENT }}>
+            💡 Τα άρθρα με 🔒 συμπληρώνονται αυτόματα από τη φόρμα. Τα υπόλοιπα μπορείς να τα επεξεργαστείς ελεύθερα.
+            Χρησιμοποίησε κενή γραμμή για νέα παράγραφο.
+          </div>
+
+          <div style={{ display:"flex", flexDirection:"column", gap:12, maxHeight:"60vh", overflowY:"auto", paddingRight:4 }}>
+            {articles
+              .filter(a => a.id !== "a-close")
+              .sort((a,b) => a.order - b.order)
+              .map((art, idx, arr) => (
+              <div key={art.id} style={{ border:"1px solid "+BORDER, borderRadius:8, padding:14 }}>
+                {/* Header row */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:art.type==="dynamic"?0:10 }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                    <button
+                      disabled={idx===0}
+                      onClick={() => {
+                        const sorted = [...articles].filter(a=>a.id!=="a-close").sort((a,b)=>a.order-b.order);
+                        const prev = sorted[idx-1];
+                        setArticles(as => as.map(a => {
+                          if (a.id===art.id) return {...a, order:prev.order};
+                          if (a.id===prev.id) return {...a, order:art.order};
+                          return a;
+                        }));
+                      }}
+                      style={{ background:"none", border:"1px solid "+BORDER, borderRadius:3,
+                        cursor:idx===0?"not-allowed":"pointer", fontSize:10, padding:"1px 5px",
+                        opacity:idx===0?0.3:1, lineHeight:1 }}>▲</button>
+                    <button
+                      disabled={idx===arr.length-1}
+                      onClick={() => {
+                        const sorted = [...articles].filter(a=>a.id!=="a-close").sort((a,b)=>a.order-b.order);
+                        const next = sorted[idx+1];
+                        setArticles(as => as.map(a => {
+                          if (a.id===art.id) return {...a, order:next.order};
+                          if (a.id===next.id) return {...a, order:art.order};
+                          return a;
+                        }));
+                      }}
+                      style={{ background:"none", border:"1px solid "+BORDER, borderRadius:3,
+                        cursor:idx===arr.length-1?"not-allowed":"pointer", fontSize:10,
+                        padding:"1px 5px", opacity:idx===arr.length-1?0.3:1, lineHeight:1 }}>▼</button>
+                  </div>
+
+                  <div style={{ flex:1 }}>
+                    {art.type === "dynamic"
+                      ? <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:12, color:MUTED }}>🔒</span>
+                          <input style={{ ...inpStyle, fontWeight:700, color:NAVY }}
+                            value={art.title}
+                            onChange={e => setArticles(as => as.map(a =>
+                              a.id===art.id ? {...a, title:e.target.value} : a
+                            ))} />
+                        </div>
+                      : <input style={{ ...inpStyle, fontWeight:700, color:NAVY }}
+                          value={art.title}
+                          onChange={e => setArticles(as => as.map(a =>
+                            a.id===art.id ? {...a, title:e.target.value} : a
+                          ))} />
+                    }
+                  </div>
+
+                  {/* Delete button — only for non-dynamic articles */}
+                  {art.type !== "dynamic" && (
+                    <button onClick={() => setArticles(as => as.filter(a => a.id!==art.id))}
+                      style={{ background:"none", border:"none", color:"#FC8181",
+                        cursor:"pointer", fontSize:16, flexShrink:0 }}>✕</button>
+                  )}
+                </div>
+
+                {/* Content */}
+                {art.type === "dynamic" ? (
+                  <div style={{ fontSize:12, color:MUTED, fontStyle:"italic", marginTop:6,
+                    padding:"6px 10px", background:BG, borderRadius:5 }}>
+                    🔒 {art.hint}
+                  </div>
+                ) : (
+                  <textarea
+                    style={{ ...inpStyle, minHeight:90, resize:"vertical", fontSize:13 }}
+                    value={art.content}
+                    onChange={e => setArticles(as => as.map(a =>
+                      a.id===art.id ? {...a, content:e.target.value} : a
+                    ))}
+                    placeholder="Κείμενο άρθρου… (κενή γραμμή = νέα παράγραφος)" />
+                )}
+              </div>
+            ))}
+
+            {/* Closing article */}
+            {articles.filter(a => a.id==="a-close").map(art => (
+              <div key={art.id} style={{ border:"2px dashed "+BORDER, borderRadius:8, padding:14,
+                background:"#FAFCFF" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:MUTED, textTransform:"uppercase",
+                  letterSpacing:.5, marginBottom:8 }}>
+                  ✍ ΚΛΕΙΣΙΜΟ — εμφανίζεται πριν τις υπογραφές
+                </div>
+                <textarea
+                  style={{ ...inpStyle, minHeight:60, resize:"vertical", fontSize:13 }}
+                  value={art.content}
+                  onChange={e => setArticles(as => as.map(a =>
+                    a.id==="a-close" ? {...a, content:e.target.value} : a
+                  ))} />
+              </div>
+            ))}
+          </div>
+
+          {/* Add new article button */}
+          <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid "+BORDER,
+            display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <Btn variant="ghost" onClick={() => {
+              const maxOrder = Math.max(...articles.filter(a=>a.id!=="a-close").map(a=>a.order), 0);
+              setArticles(as => [...as, {
+                id: "a"+Date.now(), order: maxOrder+1, type:"static",
+                title: "ΝΕΑΡΘΡΟ " + (maxOrder+1) + " — ΤΙΤΛΟΣ",
+                content: "", hint: "",
+              }]);
+            }}>
+              + Προσθήκη νέου άρθρου
+            </Btn>
+            <div style={{ display:"flex", gap:10 }}>
+              <Btn variant="danger" onClick={() => {
+                if (window.confirm("Επαναφορά στις προεπιλογές;")) {
+                  setArticles(ARTICLES0);
+                }
+              }}>↺ Επαναφορά</Btn>
+              <Btn variant="primary" onClick={() => setShowAM(false)}>✓ Αποθήκευση & Κλείσιμο</Btn>
+            </div>
           </div>
         </Modal>
       )}
