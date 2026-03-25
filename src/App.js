@@ -96,6 +96,11 @@ const SB_URL = process.env.REACT_APP_SUPABASE_URL || "";
 const SB_KEY = process.env.REACT_APP_SUPABASE_KEY || "";
 const useSB  = !!(SB_URL && SB_KEY);
 
+// Startup diagnostics (visible in browser DevTools → Console)
+console.log("[PlusAccounting] Supabase enabled:", useSB);
+console.log("[PlusAccounting] SB_URL:", SB_URL || "(not set)");
+console.log("[PlusAccounting] SB_KEY:", SB_KEY ? SB_KEY.slice(0,20) + "..." : "(not set)");
+
 // localStorage cache (instant load + offline fallback)
 const lsGet = (k,fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
 const lsSet = (k,v)  => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} };
@@ -104,15 +109,17 @@ const lsSet = (k,v)  => { try { localStorage.setItem(k,JSON.stringify(v)); } cat
 async function sbGet(key, fallback) {
   if (!useSB) return fallback;
   try {
-    const res = await fetch(
-      SB_URL + "/rest/v1/store?key=eq." + key + "&select=value",
-      { headers: { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY } }
-    );
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const rows = await res.json();
+    const url = SB_URL + "/rest/v1/store?key=eq." + key + "&select=value";
+    const res = await fetch(url, {
+      headers: { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY }
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error("HTTP " + res.status + ": " + text.slice(0,200));
+    const rows = JSON.parse(text);
+    console.log("[SB GET]", key, "->", rows.length, "rows");
     return rows.length > 0 ? rows[0].value : fallback;
   } catch (e) {
-    console.warn("Supabase GET [" + key + "] failed:", e.message);
+    console.error("[SB GET ERROR]", key, e.message);
     return fallback;
   }
 }
@@ -120,18 +127,24 @@ async function sbGet(key, fallback) {
 async function sbSet(key, value) {
   if (!useSB) return;
   try {
-    await fetch(SB_URL + "/rest/v1/store", {
+    const res = await fetch(SB_URL + "/rest/v1/store?on_conflict=key", {
       method:  "POST",
       headers: {
         "apikey":        SB_KEY,
         "Authorization": "Bearer " + SB_KEY,
         "Content-Type":  "application/json",
-        "Prefer":        "resolution=merge-duplicates",
+        "Prefer":        "resolution=merge-duplicates,return=minimal",
       },
       body: JSON.stringify({ key, value }),
     });
+    const text = await res.text();
+    if (!res.ok) {
+      console.error("[SB SET ERROR]", key, "HTTP", res.status, text.slice(0,200));
+    } else {
+      console.log("[SB SET]", key, "-> OK (HTTP", res.status + ")");
+    }
   } catch (e) {
-    console.warn("Supabase SET [" + key + "] failed:", e.message);
+    console.error("[SB SET ERROR]", key, e.message);
   }
 }
 
@@ -803,16 +816,45 @@ export default function App() {
       if (h)           setHistory(h);
       if (l)           setLogo(l);
       setSbStatus("ok");
-    }).catch(() => setSbStatus("error"));
+      loadedRef.current = true; // now safe to persist changes
+    }).catch(() => {
+      setSbStatus("error");
+      loadedRef.current = true; // also allow saves on error (use local data)
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If not using Supabase, mark as loaded immediately
+  useEffect(() => {
+    if (!useSB) loadedRef.current = true;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist to localStorage (cache) + Supabase (source of truth)
-  useEffect(() => { lsSet("pa_firm",     firm);     sbSet("firm",     firm);     }, [firm]);
-  useEffect(() => { lsSet("pa_clients",  clients);  sbSet("clients",  clients);  }, [clients]);
-  useEffect(() => { lsSet("pa_packages", packages); sbSet("packages", packages); }, [packages]);
-  useEffect(() => { lsSet("pa_articles", articles); sbSet("articles", articles); }, [articles]);
-  useEffect(() => { lsSet("pa_history",  history);  sbSet("history",  history);  }, [history]);
-  useEffect(() => { if (logo) { lsSet("pa_logo", logo); sbSet("logo", logo); }   }, [logo]);
+  // loadedRef prevents overwriting Supabase data on initial mount
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    if (!loadedRef.current) return; // skip first render
+    lsSet("pa_firm", firm); sbSet("firm", firm);
+  }, [firm]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    lsSet("pa_clients", clients); sbSet("clients", clients);
+  }, [clients]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    lsSet("pa_packages", packages); sbSet("packages", packages);
+  }, [packages]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    lsSet("pa_articles", articles); sbSet("articles", articles);
+  }, [articles]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    lsSet("pa_history", history); sbSet("history", history);
+  }, [history]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    if (logo) { lsSet("pa_logo", logo); sbSet("logo", logo); }
+  }, [logo]);
 
   const client = clients.find(c => c.id === clientId);
   const canGen = !!(client && lines.some(l => l.pkgId));
