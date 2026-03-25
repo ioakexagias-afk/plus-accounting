@@ -1597,8 +1597,7 @@ export default function App() {
               <div style={{ background:LIGHT, borderRadius:8, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
                 <div style={{ fontWeight:700, color:NAVY, marginBottom:8 }}>Μορφή CSV (πρώτη γραμμή = επικεφαλίδες):</div>
                 <code style={{ fontSize:12, background:"#f0f0f0", padding:"6px 10px", borderRadius:4, display:"block", whiteSpace:"pre" }}>
-                  {"name,afm,doy,address,email,phone,type
-ΑΛΦΑ ΕΠΕ,123456789,ΔΟΥ Αθηνών,Σταδίου 1,info@alfa.gr,2100000001,business"}
+                  {"name,afm,doy,address,email,phone,type\nΑΛΦΑ ΕΠΕ,123456789,ΔΟΥ Αθηνών,Σταδίου 1,info@alfa.gr,2100000001,business"}
                 </code>
                 <div style={{ fontSize:11, color:MUTED, marginTop:8 }}>
                   Υποχρεωτικά: <strong>name, afm</strong> · type: business ή individual (default: business)
@@ -1610,7 +1609,7 @@ export default function App() {
 ";
                   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
                   const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a"); a.href=url; a.download="template_pelates.csv"  /* rename to .xlsx for Excel */; a.click();
+                  const a = document.createElement("a"); a.href=url; a.download="template_pelates.csv"; a.click();
                   URL.revokeObjectURL(url);
                 }}>⬇ Κατέβασε Template</Btn>
               </div>
@@ -1699,8 +1698,7 @@ export default function App() {
               <div style={{ background:LIGHT, borderRadius:8, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
                 <div style={{ fontWeight:700, color:NAVY, marginBottom:8 }}>Μορφή CSV:</div>
                 <code style={{ fontSize:12, background:"#f0f0f0", padding:"6px 10px", borderRadius:4, display:"block", whiteSpace:"pre" }}>
-                  {"code,name,desc,price,vat
-LOG-001,Βασικό Πακέτο,Τήρηση βιβλίων ΦΠΑ,150,24"}
+                  {"code,name,desc,price,vat\nLOG-001,Βασικό Πακέτο,Τήρηση βιβλίων ΦΠΑ,150,24"}
                 </code>
                 <div style={{ fontSize:11, color:MUTED, marginTop:8 }}>
                   Υποχρεωτικά: <strong>name</strong> · vat default: 24
