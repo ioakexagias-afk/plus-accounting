@@ -797,6 +797,9 @@ export default function App() {
   const [ff, setFf] = useState(FIRM0);
   const logoRef = useRef();
 
+  // Prevents persist effects from overwriting Supabase data before load completes
+  const loadedRef = useRef(false);
+
   // On mount: load everything from Supabase (overrides localStorage cache)
   useEffect(() => {
     if (!useSB) return;
@@ -829,8 +832,6 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist to localStorage (cache) + Supabase (source of truth)
-  // loadedRef prevents overwriting Supabase data on initial mount
-  const loadedRef = useRef(false);
   useEffect(() => {
     if (!loadedRef.current) return; // skip first render
     lsSet("pa_firm", firm); sbSet("firm", firm);
