@@ -801,12 +801,12 @@ export default function App() {
       setSbStatus("error");
       loadedRef.current = true; // also allow saves on error (use local data)
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line
 
   // If not using Supabase, mark as loaded immediately
   useEffect(() => {
     if (!useSB) loadedRef.current = true;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line
 
   // Persist to localStorage (cache) + Supabase (source of truth)
   useEffect(() => {
