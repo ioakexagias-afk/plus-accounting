@@ -87,8 +87,79 @@ const ARTICLES0 = [
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"" });
-const lsGet    = (k,fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
-const lsSet    = (k,v)  => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} };
+
+/* ─── Supabase data layer ───────────────────────────────────────────────── */
+// Set in Vercel → Settings → Environment Variables:
+//   REACT_APP_SUPABASE_URL = https://xxxx.supabase.co
+//   REACT_APP_SUPABASE_KEY = your-anon-public-key
+const SB_URL = process.env.REACT_APP_SUPABASE_URL || "";
+const SB_KEY = process.env.REACT_APP_SUPABASE_KEY || "";
+const useSB  = !!(SB_URL && SB_KEY);
+
+// localStorage cache (instant load + offline fallback)
+const lsGet = (k,fb) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):fb; } catch { return fb; } };
+const lsSet = (k,v)  => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} };
+
+// Supabase uses a single table "store" with columns: key TEXT PRIMARY KEY, value JSONB
+async function sbGet(key, fallback) {
+  if (!useSB) return fallback;
+  try {
+    const res = await fetch(
+      SB_URL + "/rest/v1/store?key=eq." + key + "&select=value",
+      { headers: { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY } }
+    );
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const rows = await res.json();
+    return rows.length > 0 ? rows[0].value : fallback;
+  } catch (e) {
+    console.warn("Supabase GET [" + key + "] failed:", e.message);
+    return fallback;
+  }
+}
+
+async function sbSet(key, value) {
+  if (!useSB) return;
+  try {
+    await fetch(SB_URL + "/rest/v1/store", {
+      method:  "POST",
+      headers: {
+        "apikey":        SB_KEY,
+        "Authorization": "Bearer " + SB_KEY,
+        "Content-Type":  "application/json",
+        "Prefer":        "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({ key, value }),
+    });
+  } catch (e) {
+    console.warn("Supabase SET [" + key + "] failed:", e.message);
+  }
+}
+
+// History: upsert single document
+async function sbUpsertDoc(doc) {
+  if (!useSB) return;
+  try {
+    const history = await sbGet("history", []);
+    const idx = history.findIndex(d => d.id === doc.id);
+    if (idx >= 0) history[idx] = doc;
+    else history.unshift(doc);
+    await sbSet("history", history);
+  } catch (e) {
+    console.warn("Supabase upsert doc failed:", e.message);
+  }
+}
+
+// History: delete single document
+async function sbDeleteDoc(id) {
+  if (!useSB) return;
+  try {
+    const history = await sbGet("history", []);
+    await sbSet("history", history.filter(d => d.id !== id));
+  } catch (e) {
+    console.warn("Supabase delete doc failed:", e.message);
+  }
+}
+
 const xe       = (s)    => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmtD     = (ds)   => { try { return new Date(ds).toLocaleDateString("el-GR"); } catch { return ds||""; } };
 
@@ -686,6 +757,7 @@ export default function App() {
   const [packages,  setPackages]  = useState(() => lsGet("pa_packages", PKGS0));
   const [articles,  setArticles]  = useState(() => lsGet("pa_articles", ARTICLES0));
   const [history,   setHistory]   = useState(() => lsGet("pa_history",  []));
+  const [sbStatus,  setSbStatus]  = useState("idle"); // idle | loading | ok | error
 
   const [docType,   setDocType]   = useState("prosfora");
   const [clientId,  setClientId]  = useState("");
@@ -712,12 +784,35 @@ export default function App() {
   const [ff, setFf] = useState(FIRM0);
   const logoRef = useRef();
 
-  useEffect(() => lsSet("pa_firm",     firm),     [firm]);
-  useEffect(() => lsSet("pa_clients",  clients),  [clients]);
-  useEffect(() => lsSet("pa_packages", packages), [packages]);
-  useEffect(() => lsSet("pa_articles", articles), [articles]);
-  useEffect(() => lsSet("pa_history",  history),  [history]);
-  useEffect(() => { if (logo) lsSet("pa_logo", logo); }, [logo]);
+  // On mount: load everything from Supabase (overrides localStorage cache)
+  useEffect(() => {
+    if (!useSB) return;
+    setSbStatus("loading");
+    Promise.all([
+      sbGet("firm",     lsGet("pa_firm",     FIRM0)),
+      sbGet("clients",  lsGet("pa_clients",  CLIENTS0)),
+      sbGet("packages", lsGet("pa_packages", PKGS0)),
+      sbGet("articles", lsGet("pa_articles", ARTICLES0)),
+      sbGet("history",  lsGet("pa_history",  [])),
+      sbGet("logo",     lsGet("pa_logo",     null)),
+    ]).then(([f, c, p, a, h, l]) => {
+      if (f)           setFirm(f);
+      if (c?.length)   setClients(c);
+      if (p?.length)   setPackages(p);
+      if (a?.length)   setArticles(a);
+      if (h)           setHistory(h);
+      if (l)           setLogo(l);
+      setSbStatus("ok");
+    }).catch(() => setSbStatus("error"));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist to localStorage (cache) + Supabase (source of truth)
+  useEffect(() => { lsSet("pa_firm",     firm);     sbSet("firm",     firm);     }, [firm]);
+  useEffect(() => { lsSet("pa_clients",  clients);  sbSet("clients",  clients);  }, [clients]);
+  useEffect(() => { lsSet("pa_packages", packages); sbSet("packages", packages); }, [packages]);
+  useEffect(() => { lsSet("pa_articles", articles); sbSet("articles", articles); }, [articles]);
+  useEffect(() => { lsSet("pa_history",  history);  sbSet("history",  history);  }, [history]);
+  useEffect(() => { if (logo) { lsSet("pa_logo", logo); sbSet("logo", logo); }   }, [logo]);
 
   const client = clients.find(c => c.id === clientId);
   const canGen = !!(client && lines.some(l => l.pkgId));
@@ -887,6 +982,15 @@ export default function App() {
                 Document Generator
               </div>
             </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            {useSB && (
+              <div style={{ fontSize:11, color:"rgba(255,255,255,.6)", display:"flex", alignItems:"center", gap:5 }}>
+                <span style={{ width:7, height:7, borderRadius:"50%", display:"inline-block",
+                  background: sbStatus==="ok" ? "#68D391" : sbStatus==="error" ? "#FC8181" : "#F6E05E" }}/>
+                {sbStatus==="ok" ? "DB ✓" : sbStatus==="error" ? "DB ✗" : "DB..."}
+              </div>
+            )}
           </div>
           <nav style={{ display:"flex", gap:4 }}>
             {[
