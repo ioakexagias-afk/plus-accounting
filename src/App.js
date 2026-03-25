@@ -148,30 +148,7 @@ async function sbSet(key, value) {
   }
 }
 
-// History: upsert single document
-async function sbUpsertDoc(doc) {
-  if (!useSB) return;
-  try {
-    const history = await sbGet("history", []);
-    const idx = history.findIndex(d => d.id === doc.id);
-    if (idx >= 0) history[idx] = doc;
-    else history.unshift(doc);
-    await sbSet("history", history);
-  } catch (e) {
-    console.warn("Supabase upsert doc failed:", e.message);
-  }
-}
 
-// History: delete single document
-async function sbDeleteDoc(id) {
-  if (!useSB) return;
-  try {
-    const history = await sbGet("history", []);
-    await sbSet("history", history.filter(d => d.id !== id));
-  } catch (e) {
-    console.warn("Supabase delete doc failed:", e.message);
-  }
-}
 
 const xe       = (s)    => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmtD     = (ds)   => { try { return new Date(ds).toLocaleDateString("el-GR"); } catch { return ds||""; } };
