@@ -518,6 +518,145 @@ function SectionTitle({ children }) {
 }
 
 
+/* ─── SheetJS loader (Excel support) ────────────────────────────────────── */
+let XLSX = null;
+(function loadSheetJS() {
+  if (window.XLSX) { XLSX = window.XLSX; return; }
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload = () => { XLSX = window.XLSX; };
+  document.head.appendChild(s);
+})();
+
+/* ─── File Import / Export helpers ──────────────────────────────────────── */
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return { headers:[], rows:[] };
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
+  const rows = lines.slice(1).map(line => {
+    const fields = [];
+    let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"')           { inQ = !inQ; }
+      else if (c === "," && !inQ) { fields.push(cur.trim()); cur = ""; }
+      else                        { cur += c; }
+    }
+    fields.push(cur.trim());
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (fields[i] || "").replace(/^["']|["']$/g, ""); });
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+  return { headers, rows };
+}
+
+function parseXLSX(arrayBuffer) {
+  if (!XLSX) throw new Error("Η βιβλιοθήκη Excel δεν έχει φορτωθεί. Δοκιμάστε ξανά σε λίγο.");
+  const wb   = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+  const ws   = wb.Sheets[wb.SheetNames[0]];
+  const data = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+  if (data.length < 2) return { headers:[], rows:[] };
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const rows = data.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = String(row[i] ?? "").trim(); });
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+  return { headers, rows };
+}
+
+function readImportFile(file) {
+  return new Promise((resolve, reject) => {
+    const isExcel = /\.(xlsx|xls|ods)$/i.test(file.name);
+    const reader  = new FileReader();
+    if (isExcel) {
+      reader.onload = ev => {
+        try { resolve(parseXLSX(ev.target.result)); }
+        catch(e) { reject(e); }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = ev => { try { resolve(parseCSV(ev.target.result)); } catch(e) { reject(e); } };
+      reader.readAsText(file, "UTF-8");
+    }
+    reader.onerror = () => reject(new Error("Σφάλμα ανάγνωσης αρχείου"));
+  });
+}
+
+function exportXLSX(headers, rows, filename) {
+  if (!XLSX) { exportCSV(headers, rows, filename.replace(".xlsx", ".csv")); return; }
+  const wsData = [headers, ...rows.map(r => headers.map(h => r[h] ?? ""))];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws["!cols"] = headers.map(() => ({ wch: 22 }));
+  XLSX.utils.book_append_sheet(wb, ws, "Data");
+  XLSX.writeFile(wb, filename);
+}
+
+function exportAllData(clients, packages, history) {
+  exportXLSX(
+    ["name","afm","doy","address","email","phone","type"],
+    clients,
+    "pelates.xlsx"
+  );
+  setTimeout(() => exportXLSX(
+    ["code","name","desc","price","vat"],
+    packages,
+    "paketa.xlsx"
+  ), 400);
+  setTimeout(() => exportXLSX(
+    ["docNo","type","clientName","totalGross","date"],
+    history.map(d => ({
+      docNo:      d.docNo || "",
+      type:       d.type === "prosfora" ? "Προσφορά" : "Συμφωνητικό",
+      clientName: d.clientName || "",
+      totalGross: d.totalGross || "",
+      date:       d.date || "",
+    })),
+    "istoriko.xlsx"
+  ), 800);
+}
+// Validate and map parsed rows → clients
+function validateClients({ headers, rows }) {
+  const required = ["name", "afm"];
+  const missing  = required.filter(r => !headers.includes(r));
+  if (missing.length) return { errors: ["Λείπουν στήλες: " + missing.join(", ") + ". Βεβαιωθείτε ότι η πρώτη γραμμή περιέχει: name, afm, doy, address, email, phone, type"], rows: [] };
+  const valid = [], errors = [];
+  rows.forEach((r, i) => {
+    if (!r.name) { errors.push("Γραμμή " + (i+2) + ": Λείπει το όνομα"); return; }
+    if (!r.afm)  { errors.push("Γραμμή " + (i+2) + ": Λείπει το ΑΦΜ");  return; }
+    valid.push({
+      id:      "c" + Date.now() + i,
+      name:    r.name,
+      afm:     r.afm,
+      doy:     r.doy     || "",
+      address: r.address || "",
+      email:   r.email   || "",
+      phone:   r.phone   || "",
+      type:    r.type === "individual" ? "individual" : "business",
+    });
+  });
+  return { errors, rows: valid };
+}
+
+// Validate and map parsed rows → packages
+function validatePackages({ headers, rows }) {
+  if (!headers.includes("name")) return { errors: ["Λείπει η στήλη: name. Βεβαιωθείτε ότι η πρώτη γραμμή περιέχει: code, name, desc, price, vat"], rows: [] };
+  const valid = [], errors = [];
+  rows.forEach((r, i) => {
+    if (!r.name) { errors.push("Γραμμή " + (i+2) + ": Λείπει ο τίτλος"); return; }
+    valid.push({
+      id:    "p" + Date.now() + i,
+      code:  r.code  || "",
+      name:  r.name,
+      desc:  r.desc  || "",
+      price: parseFloat(r.price) || 0,
+      vat:   parseInt(r.vat)    || 24,
+    });
+  });
+  return { errors, rows: valid };
+}
+
 /* ─── Password stored in env or hardcoded fallback ──────────────────────── */
 // To change password: set REACT_APP_PASSWORD in Vercel environment variables
 const APP_PASSWORD = process.env.REACT_APP_PASSWORD || "plusaccounting2024";
@@ -763,6 +902,9 @@ export default function App() {
   const [showPM,      setShowPM]      = useState(false);
   const [showFM,      setShowFM]      = useState(false);
   const [showAM,      setShowAM]      = useState(false);
+  const [showImportC, setShowImportC] = useState(false); // import clients
+  const [showImportP, setShowImportP] = useState(false); // import packages
+  const [importPreview, setImportPreview] = useState(null); // { type, rows, errors }
   const [editingPkg,  setEditingPkg]  = useState(null);
   const [editDoc,     setEditDoc]     = useState(null);
   const [status,      setStatus]      = useState({ msg:"", type:"" });
@@ -1282,6 +1424,9 @@ export default function App() {
                 alignItems:"center", marginBottom:14 }}>
                 <SectionTitle>Στοιχεία Γραφείου</SectionTitle>
                 <div style={{ display:"flex", gap:8 }}>
+                  <Btn size="sm" variant="success" onClick={() => exportAllData(clients, packages, history)}>
+                    ⬇ Export CSV
+                  </Btn>
                   <input ref={logoRef} type="file" accept="image/*"
                     style={{ display:"none" }} onChange={handleLogoUpload} />
                   <Btn size="sm" variant="ghost"
@@ -1347,7 +1492,10 @@ export default function App() {
                   <h3 style={{ margin:0, color:NAVY, fontSize:15 }}>
                     Πελατολόγιο ({clients.length})
                   </h3>
-                  <Btn size="sm" variant="primary" onClick={() => setShowCM(true)}>+ Νέος</Btn>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <Btn size="sm" variant="ghost" onClick={() => setShowImportC(true)}>⬆ Import Excel/CSV</Btn>
+                    <Btn size="sm" variant="primary" onClick={() => setShowCM(true)}>+ Νέος</Btn>
+                  </div>
                 </div>
                 <div style={{ maxHeight:380, overflowY:"auto",
                   display:"flex", flexDirection:"column", gap:8 }}>
@@ -1386,11 +1534,14 @@ export default function App() {
                   <h3 style={{ margin:0, color:NAVY, fontSize:15 }}>
                     Πακέτα Υπηρεσιών ({packages.length})
                   </h3>
-                  <Btn size="sm" variant="primary" onClick={() => {
-                    setEditingPkg(null);
-                    setPf({ code:"", name:"", desc:"", price:"", vat:"24" });
-                    setShowPM(true);
-                  }}>+ Νέο</Btn>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <Btn size="sm" variant="ghost" onClick={() => setShowImportP(true)}>⬆ Import Excel/CSV</Btn>
+                    <Btn size="sm" variant="primary" onClick={() => {
+                      setEditingPkg(null);
+                      setPf({ code:"", name:"", desc:"", price:"", vat:"24" });
+                      setShowPM(true);
+                    }}>+ Νέο</Btn>
+                  </div>
                 </div>
                 <div style={{ maxHeight:380, overflowY:"auto",
                   display:"flex", flexDirection:"column", gap:8 }}>
@@ -1437,6 +1588,210 @@ export default function App() {
       </div>
 
       {/* ── MODALS ── */}
+      {/* ── Import Clients Modal ── */}
+      {showImportC && (
+        <Modal title="⬆ Import Πελατών — Excel ή CSV" onClose={() => { setShowImportC(false); setImportPreview(null); }}>
+          {!importPreview ? (
+            <div>
+              {/* Instructions */}
+              <div style={{ background:LIGHT, borderRadius:8, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
+                <div style={{ fontWeight:700, color:NAVY, marginBottom:8 }}>Μορφή CSV (πρώτη γραμμή = επικεφαλίδες):</div>
+                <code style={{ fontSize:12, background:"#f0f0f0", padding:"6px 10px", borderRadius:4, display:"block", whiteSpace:"pre" }}>
+                  {"name,afm,doy,address,email,phone,type
+ΑΛΦΑ ΕΠΕ,123456789,ΔΟΥ Αθηνών,Σταδίου 1,info@alfa.gr,2100000001,business"}
+                </code>
+                <div style={{ fontSize:11, color:MUTED, marginTop:8 }}>
+                  Υποχρεωτικά: <strong>name, afm</strong> · type: business ή individual (default: business)
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+                <Btn variant="ghost" size="sm" onClick={() => {
+                  const csv = "name,afm,doy,address,email,phone,type
+";
+                  const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href=url; a.download="template_pelates.csv"  /* rename to .xlsx for Excel */; a.click();
+                  URL.revokeObjectURL(url);
+                }}>⬇ Κατέβασε Template</Btn>
+              </div>
+              <Lbl t="Επίλεξε αρχείο CSV">
+                <input type="file" accept=".xlsx,.xls,.csv,.ods" style={{ ...inpStyle, cursor:"pointer" }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    readImportFile(file)
+                      .then(parsed => setImportPreview({ type:"clients", ...validateClients(parsed) }))
+                      .catch(err  => setImportPreview({ type:"clients", errors:[err.message], rows:[] }));
+                  }} />
+              </Lbl>
+            </div>
+          ) : (
+            <div>
+              {importPreview.errors.length > 0 && (
+                <div style={{ background:REDL, border:"1px solid #FC8181", borderRadius:7,
+                  padding:"10px 14px", marginBottom:14 }}>
+                  <div style={{ fontWeight:700, color:RED, marginBottom:6 }}>⚠ Σφάλματα:</div>
+                  {importPreview.errors.map((e,i) => <div key={i} style={{ fontSize:12, color:RED }}>{e}</div>)}
+                </div>
+              )}
+              {importPreview.rows.length > 0 && (
+                <div>
+                  <div style={{ fontWeight:700, color:NAVY, marginBottom:10 }}>
+                    Preview: {importPreview.rows.length} πελάτες έτοιμοι για εισαγωγή
+                  </div>
+                  <div style={{ maxHeight:280, overflowY:"auto", border:"1px solid "+BORDER,
+                    borderRadius:7, marginBottom:14 }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                      <thead>
+                        <tr style={{ background:LIGHT }}>
+                          {["Επωνυμία","ΑΦΜ","ΔΟΥ","Email","Τύπος"].map(h => (
+                            <th key={h} style={{ padding:"6px 10px", textAlign:"left",
+                              fontWeight:700, color:NAVY, borderBottom:"1px solid "+BORDER }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.rows.map((r,i) => (
+                          <tr key={i} style={{ borderBottom:"1px solid "+BORDER, background:i%2?"#FAFCFF":"white" }}>
+                            <td style={{ padding:"5px 10px" }}>{r.name}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.afm}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.doy}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.email}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.type === "business" ? "Επιχείρηση" : "Φυσικό"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div style={{ display:"flex", gap:10, justifyContent:"space-between" }}>
+                <Btn variant="ghost" onClick={() => setImportPreview(null)}>← Πίσω</Btn>
+                <div style={{ display:"flex", gap:8 }}>
+                  <Btn variant="ghost" onClick={() => { setShowImportC(false); setImportPreview(null); }}>Ακύρωση</Btn>
+                  {importPreview.rows.length > 0 && (
+                    <Btn variant="primary" onClick={() => {
+                      setClients(prev => {
+                        const existingAfms = new Set(prev.map(c => c.afm));
+                        const newOnes = importPreview.rows.filter(r => !existingAfms.has(r.afm));
+                        showMsg("✓ Εισήχθησαν " + newOnes.length + " νέοι πελάτες" +
+                          (importPreview.rows.length - newOnes.length > 0
+                            ? " (" + (importPreview.rows.length - newOnes.length) + " παραλείφθηκαν - υπάρχουν ήδη)"
+                            : ""), "ok");
+                        return [...prev, ...newOnes];
+                      });
+                      setShowImportC(false); setImportPreview(null);
+                    }}>
+                      ✓ Εισαγωγή {importPreview.rows.length} πελατών
+                    </Btn>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* ── Import Packages Modal ── */}
+      {showImportP && (
+        <Modal title="⬆ Import Πακέτων — Excel ή CSV" onClose={() => { setShowImportP(false); setImportPreview(null); }}>
+          {!importPreview ? (
+            <div>
+              <div style={{ background:LIGHT, borderRadius:8, padding:"12px 16px", marginBottom:16, fontSize:13 }}>
+                <div style={{ fontWeight:700, color:NAVY, marginBottom:8 }}>Μορφή CSV:</div>
+                <code style={{ fontSize:12, background:"#f0f0f0", padding:"6px 10px", borderRadius:4, display:"block", whiteSpace:"pre" }}>
+                  {"code,name,desc,price,vat
+LOG-001,Βασικό Πακέτο,Τήρηση βιβλίων ΦΠΑ,150,24"}
+                </code>
+                <div style={{ fontSize:11, color:MUTED, marginTop:8 }}>
+                  Υποχρεωτικά: <strong>name</strong> · vat default: 24
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+                <Btn variant="ghost" size="sm" onClick={() => {
+                  const csv = "code,name,desc,price,vat
+";
+                  const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href=url; a.download="template_paketa.csv"; a.click();
+                  URL.revokeObjectURL(url);
+                }}>⬇ Κατέβασε Template</Btn>
+              </div>
+              <Lbl t="Επίλεξε αρχείο CSV">
+                <input type="file" accept=".xlsx,.xls,.csv,.ods" style={{ ...inpStyle, cursor:"pointer" }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    readImportFile(file)
+                      .then(parsed => setImportPreview({ type:"packages", ...validatePackages(parsed) }))
+                      .catch(err  => setImportPreview({ type:"packages", errors:[err.message], rows:[] }));
+                  }} />
+              </Lbl>
+            </div>
+          ) : (
+            <div>
+              {importPreview.errors.length > 0 && (
+                <div style={{ background:REDL, border:"1px solid #FC8181", borderRadius:7,
+                  padding:"10px 14px", marginBottom:14 }}>
+                  <div style={{ fontWeight:700, color:RED, marginBottom:6 }}>⚠ Σφάλματα:</div>
+                  {importPreview.errors.map((e,i) => <div key={i} style={{ fontSize:12, color:RED }}>{e}</div>)}
+                </div>
+              )}
+              {importPreview.rows.length > 0 && (
+                <div>
+                  <div style={{ fontWeight:700, color:NAVY, marginBottom:10 }}>
+                    Preview: {importPreview.rows.length} πακέτα έτοιμα για εισαγωγή
+                  </div>
+                  <div style={{ maxHeight:280, overflowY:"auto", border:"1px solid "+BORDER,
+                    borderRadius:7, marginBottom:14 }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                      <thead>
+                        <tr style={{ background:LIGHT }}>
+                          {["Κωδικός","Τίτλος","Τιμή","ΦΠΑ%"].map(h => (
+                            <th key={h} style={{ padding:"6px 10px", textAlign:"left",
+                              fontWeight:700, color:NAVY, borderBottom:"1px solid "+BORDER }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.rows.map((r,i) => (
+                          <tr key={i} style={{ borderBottom:"1px solid "+BORDER, background:i%2?"#FAFCFF":"white" }}>
+                            <td style={{ padding:"5px 10px", color:ACCENT, fontWeight:600 }}>{r.code}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.name}</td>
+                            <td style={{ padding:"5px 10px" }}>{r.price}€</td>
+                            <td style={{ padding:"5px 10px" }}>{r.vat}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div style={{ display:"flex", gap:10, justifyContent:"space-between" }}>
+                <Btn variant="ghost" onClick={() => setImportPreview(null)}>← Πίσω</Btn>
+                <div style={{ display:"flex", gap:8 }}>
+                  <Btn variant="ghost" onClick={() => { setShowImportP(false); setImportPreview(null); }}>Ακύρωση</Btn>
+                  {importPreview.rows.length > 0 && (
+                    <Btn variant="primary" onClick={() => {
+                      setPackages(prev => {
+                        const existingNames = new Set(prev.map(p => p.name.toLowerCase()));
+                        const newOnes = importPreview.rows.filter(r => !existingNames.has(r.name.toLowerCase()));
+                        showMsg("✓ Εισήχθησαν " + newOnes.length + " νέα πακέτα" +
+                          (importPreview.rows.length - newOnes.length > 0
+                            ? " (" + (importPreview.rows.length - newOnes.length) + " παραλείφθηκαν - υπάρχουν ήδη)"
+                            : ""), "ok");
+                        return [...prev, ...newOnes];
+                      });
+                      setShowImportP(false); setImportPreview(null);
+                    }}>
+                      ✓ Εισαγωγή {importPreview.rows.length} πακέτων
+                    </Btn>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {showCM && (
         <Modal title="Νέος Πελάτης" onClose={() => setShowCM(false)}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
