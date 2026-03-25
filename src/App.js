@@ -1605,8 +1605,7 @@ export default function App() {
               </div>
               <div style={{ display:"flex", gap:10, marginBottom:12 }}>
                 <Btn variant="ghost" size="sm" onClick={() => {
-                  const csv = "name,afm,doy,address,email,phone,type
-";
+                  const csv = "name,afm,doy,address,email,phone,type\n";
                   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a"); a.href=url; a.download="template_pelates.csv"; a.click();
@@ -1706,8 +1705,7 @@ export default function App() {
               </div>
               <div style={{ display:"flex", gap:10, marginBottom:12 }}>
                 <Btn variant="ghost" size="sm" onClick={() => {
-                  const csv = "code,name,desc,price,vat
-";
+                  const csv = "code,name,desc,price,vat\n";
                   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a"); a.href=url; a.download="template_paketa.csv"; a.click();
