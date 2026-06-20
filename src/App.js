@@ -60,7 +60,7 @@ const ARTICLES0 = [
     id: "a3", order: 3, type: "dynamic",
     title: "ΑΡΘΡΟ 3 — ΔΙΑΡΚΕΙΑ / DURATION",
     content: "",
-    hint: "Συμπληρώνεται αυτόματα από τις ημερομηνίες",
+    hint: "Συμπληρώνεται αυτόματα: ημερομηνίες + σιωπηλή ανανέωση με πληθωρισμό",
   },
   {
     id: "a4", order: 4, type: "static",
@@ -363,13 +363,14 @@ function buildDocHtml(d, logo) {
             "<p style='font-size:10pt;font-weight:700;color:#1A3C5E;margin:10px 0 4px;'>1.2. ΧΑΡΑΚΤΗΡΑΣ ΣΥΝΕΡΓΑΣΙΑΣ</p>" +
             pp("Ο «ΣΥΝΕΡΓΑΤΗΣ» ενεργεί ως ανεξάρτητος επαγγελματίας και όχι ως υπάλληλος της «ΕΠΙΧΕΙΡΗΣΗΣ». Η σχέση των μερών διέπεται από τις διατάξεις περί εντολής του Αστικού Κώδικα.");
         } else if (art.id === "a2") {
-          // Article 2: Services table + payment
+          // Article 2: Services table + payment + optional extra text
           articlesHtml += svcTable;
           articlesHtml += pp("Τρόπος πληρωμής: " + payMethod);
+          if (d.a2Notes) articlesHtml += pp(d.a2Notes, "margin-top:8px;color:#444;");
         } else if (art.id === "a3") {
           articlesHtml += pp("Έναρξη: " + fmtD(startDate));
           articlesHtml += pp("Διάρκεια: " + duration);
-          articlesHtml += pp("Η σύμβαση παρατείνεται αυτόματα εκτός εάν καταγγελθεί εγγράφως με 30 ημέρες προειδοποίηση.");
+          articlesHtml += pp("Η ανανέωση του συμφωνητικού ορίζεται ότι μπορεί να γίνει και σιωπηλά μετά την λήξη με αύξηση το ποσοστό του πληθωρισμού του αμέσως προηγουμένου έτους.");
         }
       } else {
         (art.content || "").split("\n").filter(t => t.trim()).forEach(function(ln) {
@@ -941,7 +942,6 @@ export default function App() {
   const [docType,   setDocType]   = useState("prosfora");
   const [clientId,  setClientId]  = useState("");
   const [lines,     setLines]     = useState([newLine()]);
-  const [payMethod, setPayMethod] = useState("μηνιαίως");
   const [validDays, setValidDays] = useState("30");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0,10));
   const [duration,  setDuration]  = useState("12 μήνες");
@@ -952,9 +952,13 @@ export default function App() {
   const [showPM,      setShowPM]      = useState(false);
   const [showFM,      setShowFM]      = useState(false);
   const [showAM,      setShowAM]      = useState(false);
-  const [showImportC, setShowImportC] = useState(false); // import clients
-  const [showImportP, setShowImportP] = useState(false); // import packages
-  const [importPreview, setImportPreview] = useState(null); // { type, rows, errors }
+  const [showImportC, setShowImportC] = useState(false);
+  const [showImportP, setShowImportP] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [editingClient, setEditingClient] = useState(null); // client id being edited
+  const [a2Notes,     setA2Notes]     = useState(""); // extra text for Article 2
+  const [payMethodP,  setPayMethodP]  = useState("μηνιαίως"); // Prosfora payment
+  const [payMethodS,  setPayMethodS]  = useState("μηνιαίως"); // Symfonito payment
   const [editingPkg,  setEditingPkg]  = useState(null);
   const [editDoc,     setEditDoc]     = useState(null);
   const [status,      setStatus]      = useState({ msg:"", type:"" });
@@ -1059,14 +1063,16 @@ export default function App() {
         packages,
         articles,
         payMethod: histDoc.payMethod  || "μηνιαίως",
+        a2Notes:   histDoc.a2Notes   || "",
         validDays: histDoc.validDays  || "30",
         startDate: histDoc.startDate  || histDoc.date,
         duration:  histDoc.duration   || "12 μήνες",
         notes:     histDoc.notes      || "",
       };
     }
+    const payMethod = docType === "prosfora" ? payMethodP : payMethodS;
     return { docType, docNo, docDate, firm, client, lines, packages, articles,
-             payMethod, validDays, startDate, duration, notes };
+             payMethod, validDays, startDate, duration, notes, a2Notes };
   }
 
   function openPdf(histDoc=null) {
@@ -1083,8 +1089,10 @@ export default function App() {
       id:         editDoc ? editDoc.id : "doc" + Date.now(),
       type:       docType, docNo,
       clientName: client.name, clientId,
-      lines, totalGross, payMethod, validDays,
-      startDate, duration, notes,
+      lines, totalGross,
+      payMethod: docType === "prosfora" ? payMethodP : payMethodS,
+      validDays,
+      startDate, duration, notes, a2Notes,
       date:       docDate,
       createdAt:  editDoc ? editDoc.createdAt : new Date().toISOString(),
       updatedAt:  new Date().toISOString(),
@@ -1117,7 +1125,9 @@ export default function App() {
     setDocType(doc.type);
     setClientId(doc.clientId);
     setLines(doc.lines && doc.lines.length > 0 ? doc.lines : [newLine()]);
-    setPayMethod(doc.payMethod  || "μηνιαίως");
+    if (doc.type === "prosfora") setPayMethodP(doc.payMethod || "μηνιαίως");
+    else setPayMethodS(doc.payMethod || "μηνιαίως");
+    setA2Notes(doc.a2Notes || "");
     setValidDays(doc.validDays  || "30");
     setStartDate(doc.startDate  || doc.date);
     setDuration( doc.duration   || "12 μήνες");
@@ -1128,11 +1138,26 @@ export default function App() {
 
   function addClient() {
     if (!cf.name || !cf.afm) return;
-    const nc = { ...cf, id:"c" + Date.now() };
-    setClients(p => [...p, nc]);
-    setClientId(nc.id);
-    setCf({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business" });
+    if (editingClient) {
+      setClients(cs => cs.map(c => c.id === editingClient ? { ...c, ...cf } : c));
+      setEditingClient(null);
+    } else {
+      const nc = { ...cf, id:"c" + Date.now() };
+      setClients(p => [...p, nc]);
+      setClientId(nc.id);
+    }
+    setCf({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business", repName:"", repTitle:"" });
     setShowCM(false);
+  }
+
+  function startEditClient(c) {
+    setCf({
+      name:c.name||"", afm:c.afm||"", doy:c.doy||"",
+      address:c.address||"", email:c.email||"", phone:c.phone||"",
+      type:c.type||"business", repName:c.repName||"", repTitle:c.repTitle||"",
+    });
+    setEditingClient(c.id);
+    setShowCM(true);
   }
 
   function savePkg() {
@@ -1312,13 +1337,23 @@ export default function App() {
                     <input style={inpStyle} type="date" value={docDate}
                       onChange={e => setDocDate(e.target.value)} />
                   </Lbl>
-                  <Lbl t="Τρόπος Πληρωμής">
-                    <select style={selStyle} value={payMethod}
-                      onChange={e => setPayMethod(e.target.value)}>
-                      {["μηνιαίως","τριμηνιαίως","εξαμηνιαίως","ετησίως","εφάπαξ"]
-                        .map(o => <option key={o}>{o}</option>)}
-                    </select>
-                  </Lbl>
+                  {docType === "prosfora" ? (
+                    <Lbl t="Τρόπος Πληρωμής (Προσφορά)">
+                      <select style={selStyle} value={payMethodP}
+                        onChange={e => setPayMethodP(e.target.value)}>
+                        {["μηνιαίως","τριμηνιαίως","εξαμηνιαίως","ετησίως","εφάπαξ"]
+                          .map(o => <option key={o}>{o}</option>)}
+                      </select>
+                    </Lbl>
+                  ) : (
+                    <Lbl t="Τρόπος Πληρωμής (Συμφωνητικό)">
+                      <select style={selStyle} value={payMethodS}
+                        onChange={e => setPayMethodS(e.target.value)}>
+                        {["μηνιαίως","τριμηνιαίως","εξαμηνιαίως","ετησίως","εφάπαξ"]
+                          .map(o => <option key={o}>{o}</option>)}
+                      </select>
+                    </Lbl>
+                  )}
                   {docType === "prosfora" ? (
                     <Lbl t="Ισχύς (ημέρες)">
                       <input style={inpStyle} type="number" value={validDays}
@@ -1338,6 +1373,13 @@ export default function App() {
                         </select>
                       </Lbl>
                     </>
+                  )}
+                  {docType === "symfonito" && (
+                    <Lbl t="Άρθρο 2 — Επιπλέον κείμενο (προαιρετικό)">
+                      <textarea style={{ ...inpStyle, minHeight:56, resize:"vertical" }}
+                        value={a2Notes} onChange={e => setA2Notes(e.target.value)}
+                        placeholder="π.χ. Ειδικές συμφωνίες αμοιβής, εκπτώσεις…" />
+                    </Lbl>
                   )}
                   <Lbl t="Παρατηρήσεις">
                     <textarea style={{ ...inpStyle, minHeight:60, resize:"vertical" }}
@@ -1563,9 +1605,14 @@ export default function App() {
                           </div>
                           <div style={{ fontSize:11, color:MUTED }}>{c.address}</div>
                         </div>
-                        <button onClick={() => setClients(p => p.filter(x => x.id !== c.id))}
-                          style={{ background:"none", border:"none", color:"#FC8181",
-                            cursor:"pointer", fontSize:14, marginLeft:8 }}>✕</button>
+                        <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                          <button onClick={() => startEditClient(c)}
+                            style={{ background:"none", border:"none", color:ACCENT,
+                              cursor:"pointer", fontSize:14 }}>✎</button>
+                          <button onClick={() => setClients(p => p.filter(x => x.id !== c.id))}
+                            style={{ background:"none", border:"none", color:"#FC8181",
+                              cursor:"pointer", fontSize:14 }}>✕</button>
+                        </div>
                       </div>
                       <div style={{ marginTop:6 }}>
                         <Tag color="blue">
@@ -1839,7 +1886,9 @@ export default function App() {
       )}
 
       {showCM && (
-        <Modal title="Νέος Πελάτης" onClose={() => setShowCM(false)}>
+        <Modal title={editingClient ? "✎ Επεξεργασία Πελάτη" : "Νέος Πελάτης"}
+          onClose={() => { setShowCM(false); setEditingClient(null);
+            setCf({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business", repName:"", repTitle:"" }); }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <Lbl t="Επωνυμία / Ονοματεπώνυμο" req>
               <input style={inpStyle} value={cf.name}
@@ -1894,7 +1943,7 @@ export default function App() {
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:18 }}>
             <Btn variant="ghost" onClick={() => setShowCM(false)}>Ακύρωση</Btn>
             <Btn variant="primary" onClick={addClient} disabled={!cf.name || !cf.afm}>
-              Προσθήκη
+              {editingClient ? "✓ Αποθήκευση" : "Προσθήκη"}
             </Btn>
           </div>
         </Modal>
