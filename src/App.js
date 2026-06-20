@@ -14,6 +14,15 @@ const BORDER = "#C8D8E8";
 const BG     = "#F0F5FA";
 const MUTED  = "#667788";
 
+/* ─── Status config ─────────────────────────────────────────────────────── */
+const STATUS_COLORS = {
+  "προχειρο":     { bg:"#F7F7F7", fg:"#666",    br:"#CCC",    label:"Πρόχειρο" },
+  "απεσταλμένο":  { bg:"#EBF4FB", fg:ACCENT,    br:ACCENT,    label:"Απεσταλμένο" },
+  "αποδοχή":      { bg:"#F0FFF4", fg:"#276749",  br:"#68D391", label:"Αποδοχή" },
+  "απόρριψη":     { bg:"#FFF5F5", fg:"#C53030",  br:"#FC8181", label:"Απόρριψη" },
+};
+const STATUS_ORDER = ["προχειρο","απεσταλμένο","αποδοχή","απόρριψη"];
+
 /* ─── Seed data ──────────────────────────────────────────────────────────── */
 const FIRM0 = {
   name:"Plus Accounting", afm:"000000000", doy:"ΔΟΥ ...",
@@ -198,7 +207,7 @@ function calcTotals(lines, packages) {
 }
 
 /* ─── PDF HTML builder ───────────────────────────────────────────────────── */
-function buildDocHtml(d, logo) {
+function buildDocHtml(d, logo, logoSize) {
   const {
     docType, docNo, docDate, firm, client,
     lines, packages, validDays,
@@ -208,8 +217,9 @@ function buildDocHtml(d, logo) {
   const isP = docType === "prosfora";
   const { calced, totalNet, totalVat, totalGross } = calcTotals(lines, packages);
 
+  var lh = (logoSize || 80) + "px";
   const logoHtml = logo
-    ? '<img src="' + logo.url + '" style="height:48px;object-fit:contain;display:block;margin-bottom:6px;">'
+    ? '<img src="' + logo.url + '" style="height:' + lh + ';max-width:200px;object-fit:contain;display:block;margin-bottom:8px;">'
     : "";
 
   /* info box */
@@ -995,6 +1005,7 @@ export default function App() {
   const [tab,       setTab]       = useState("new");
   const [firm,      setFirm]      = useState(() => lsGet("pa_firm",     FIRM0));
   const [logo,      setLogo]      = useState(() => lsGet("pa_logo",     null));
+  const [logoSize,  setLogoSize]  = useState(() => lsGet("pa_logosize", 80)); // px height in PDF
   const [clients,   setClients]   = useState(() => lsGet("pa_clients",  CLIENTS0));
   const [packages,  setPackages]  = useState(() => lsGet("pa_packages", PKGS0));
   const [articles,  setArticles]  = useState(() => lsGet("pa_articles", ARTICLES0));
@@ -1024,6 +1035,7 @@ export default function App() {
   const [editDoc,     setEditDoc]     = useState(null);
   const [status,      setStatus]      = useState({ msg:"", type:"" });
   const [hFilt,       setHFilt]       = useState("all");
+  const [hStatus,     setHStatus]     = useState("all_status");
   const [hQ,          setHQ]          = useState("");
 
   const [cf, setCf] = useState({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business", repName:"", repTitle:"" });
@@ -1045,13 +1057,15 @@ export default function App() {
       sbGet("articles", lsGet("pa_articles", ARTICLES0)),
       sbGet("history",  lsGet("pa_history",  [])),
       sbGet("logo",     lsGet("pa_logo",     null)),
-    ]).then(([f, c, p, a, h, l]) => {
+      sbGet("logosize", lsGet("pa_logosize", 80)),
+    ]).then(([f, c, p, a, h, l, ls]) => {
       if (f)           setFirm(f);
       if (c?.length)   setClients(c);
       if (p?.length)   setPackages(p);
       if (a?.length)   setArticles(a);
       if (h)           setHistory(h);
       if (l)           setLogo(l);
+      if (ls)          setLogoSize(ls);
       setSbStatus("ok");
       loadedRef.current = true; // now safe to persist changes
     }).catch(() => {
@@ -1090,6 +1104,7 @@ export default function App() {
     if (!loadedRef.current) return;
     if (logo) { lsSet("pa_logo", logo); sbSet("logo", logo); }
   }, [logo]);
+  useEffect(() => { if (!loadedRef.current) return; lsSet("pa_logosize", logoSize); sbSet("logosize", logoSize); }, [logoSize]);
 
   const client = clients.find(c => c.id === clientId);
   const canGen = !!(client && lines.some(l => l.pkgId));
@@ -1136,7 +1151,7 @@ export default function App() {
 
   function openPdf(histDoc=null) {
     const docNo = histDoc ? histDoc.docNo : nextNo(history, docType);
-    const html  = buildDocHtml(buildPayload(docNo, histDoc), logo);
+    const html  = buildDocHtml(buildPayload(docNo, histDoc), logo, logoSize);
     const win   = window.open("", "_blank");
     win.document.write(html);
     win.document.close();
@@ -1152,6 +1167,7 @@ export default function App() {
       validDays,
       startDate, duration, notes, a2Notes,
       date:       docDate,
+      status:     editDoc ? (editDoc.status || "προχειρο") : "προχειρο",
       createdAt:  editDoc ? editDoc.createdAt : new Date().toISOString(),
       updatedAt:  new Date().toISOString(),
     };
@@ -1162,6 +1178,10 @@ export default function App() {
       setHistory(h => [entry, ...h]);
     }
     return entry;
+  }
+
+  function updateDocStatus(id, status) {
+    setHistory(h => h.map(d => d.id === id ? { ...d, status, updatedAt: new Date().toISOString() } : d));
   }
 
   function handleSave() {
@@ -1238,6 +1258,7 @@ export default function App() {
 
   const filtH = history.filter(d => {
     if (hFilt !== "all" && d.type !== hFilt) return false;
+    if (hStatus !== "all_status" && (d.status || "προχειρο") !== hStatus) return false;
     const q = hQ.toLowerCase();
     return !q || d.clientName?.toLowerCase().includes(q) || d.docNo?.toLowerCase().includes(q);
   });
@@ -1471,7 +1492,7 @@ export default function App() {
               <input style={{ ...inpStyle, maxWidth:260 }}
                 placeholder="🔍 Πελάτης ή αρ. εγγράφου…"
                 value={hQ} onChange={e => setHQ(e.target.value)} />
-              <div style={{ display:"flex", gap:6 }}>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 {[["all","Όλα"],["prosfora","Προσφορές"],["symfonito","Συμφωνητικά"]]
                   .map(([v,l]) => (
                     <button key={v} onClick={() => setHFilt(v)} style={{
@@ -1480,6 +1501,21 @@ export default function App() {
                       background: hFilt===v ? LIGHT : "#FAFCFF",
                       borderRadius:20, cursor:"pointer", fontSize:12,
                       color: hFilt===v ? ACCENT : MUTED, fontFamily:"inherit",
+                    }}>{l}</button>
+                  ))
+                }
+              </div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {[["all_status","Όλες καταστάσεις"],["προχειρο","Πρόχειρο"],
+                  ["απεσταλμένο","Απεσταλμένο"],["αποδοχή","Αποδοχή"],["απόρριψη","Απόρριψη"]]
+                  .map(([v,l]) => (
+                    <button key={v} onClick={() => setHStatus(v)} style={{
+                      padding:"5px 12px",
+                      border:"1px solid " + (hStatus===v ? STATUS_COLORS[v]?.br||ACCENT : BORDER),
+                      background: hStatus===v ? (STATUS_COLORS[v]?.bg||LIGHT) : "#FAFCFF",
+                      borderRadius:20, cursor:"pointer", fontSize:11,
+                      color: hStatus===v ? (STATUS_COLORS[v]?.fg||ACCENT) : MUTED,
+                      fontFamily:"inherit",
                     }}>{l}</button>
                   ))
                 }
@@ -1529,6 +1565,29 @@ export default function App() {
                         {" · "}{fmtD(doc.date)}
                       </div>
                     </div>
+                    {/* Status dropdown */}
+                    {(() => {
+                      const st = doc.status || "προχειρο";
+                      const sc = STATUS_COLORS[st] || STATUS_COLORS["προχειρο"];
+                      return (
+                        <select
+                          value={st}
+                          onChange={e => updateDocStatus(doc.id, e.target.value)}
+                          style={{
+                            padding:"5px 10px", fontSize:12, fontWeight:600,
+                            border:"1px solid " + sc.br,
+                            background:sc.bg, color:sc.fg,
+                            borderRadius:20, cursor:"pointer",
+                            fontFamily:"inherit", flexShrink:0,
+                          }}>
+                          {STATUS_ORDER.map(s => (
+                            <option key={s} value={s}>
+                              {STATUS_COLORS[s]?.label || s}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                     <div style={{ display:"flex", gap:6, flexShrink:0 }}>
                       <Btn size="sm" variant="gold" onClick={() => loadEdit(doc)}>
                         ✎ Αναθεώρηση
@@ -1536,10 +1595,16 @@ export default function App() {
                       <Btn size="sm" variant="blue" onClick={() => openPdf(doc)}>
                         📄 PDF
                       </Btn>
-                      <Btn size="sm" variant="danger"
-                        onClick={() => setHistory(h => h.filter(d => d.id !== doc.id))}>
-                        🗑
-                      </Btn>
+                      {(doc.status || "προχειρο") === "προχειρο" ? (
+                        <Btn size="sm" variant="danger"
+                          onClick={() => setHistory(h => h.filter(d => d.id !== doc.id))}>
+                          🗑
+                        </Btn>
+                      ) : (
+                        <div style={{ width:32, flexShrink:0 }} title="Διαγραφή μόνο σε κατάσταση Πρόχειρο">
+                          <span style={{ fontSize:18, color:BORDER, userSelect:"none" }}>🗑</span>
+                        </div>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -1577,10 +1642,30 @@ export default function App() {
                 </div>
               </div>
               {logo && (
-                <div style={{ marginBottom:14, padding:"10px 14px", background:LIGHT,
-                  borderRadius:8, display:"flex", alignItems:"center", gap:12 }}>
-                  <img src={logo.url} alt="logo" style={{ height:40, objectFit:"contain" }} />
-                  <span style={{ fontSize:12, color:MUTED }}>Λογότυπο αποθηκευμένο</span>
+                <div style={{ marginBottom:14, padding:"12px 16px", background:LIGHT,
+                  borderRadius:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+                    <img src={logo.url} alt="logo"
+                      style={{ height:logoSize, maxWidth:200, objectFit:"contain" }} />
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:NAVY,
+                        textTransform:"uppercase", letterSpacing:.5, marginBottom:6 }}>
+                        Μέγεθος στο PDF: {logoSize}px
+                      </div>
+                      <input type="range" min="40" max="160" step="4"
+                        value={logoSize}
+                        onChange={e => setLogoSize(parseInt(e.target.value))}
+                        style={{ width:"100%", accentColor:ACCENT }} />
+                      <div style={{ display:"flex", justifyContent:"space-between",
+                        fontSize:10, color:MUTED, marginTop:2 }}>
+                        <span>Μικρό (40px)</span>
+                        <span>Μεγάλο (160px)</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:11, color:MUTED }}>
+                    Η προεπισκόπηση αριστερά δείχνει το πραγματικό μέγεθος στο PDF
+                  </div>
                 </div>
               )}
               <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
