@@ -17,14 +17,17 @@ const MUTED  = "#667788";
 /* ─── Seed data ──────────────────────────────────────────────────────────── */
 const FIRM0 = {
   name:"Plus Accounting", afm:"000000000", doy:"ΔΟΥ ...",
-  address:"...", phone:"210 0000000", email:"info@plusaccounting.gr",
+  address:"...", city:"Θεσσαλονίκη", phone:"210 0000000", email:"info@plusaccounting.gr",
+  repName:"", repTitle:"", // Εκπρόσωπος Συνεργάτη
 };
 
 const CLIENTS0 = [
   { id:"c1", name:"Νίκος Παπαδόπουλος", afm:"123456789", doy:"ΔΟΥ Αθηνών Α΄",
-    address:"Λεωφ. Αθηνών 10, Αθήνα", email:"nikos@example.gr", phone:"6900000001", type:"individual" },
+    address:"Λεωφ. Αθηνών 10, Αθήνα", email:"nikos@example.gr", phone:"6900000001", type:"individual",
+    repName:"", repTitle:"" },
   { id:"c2", name:"ΑΛΦΑ ΜΟΝΟΠΡΟΣΩΠΗ ΕΠΕ", afm:"987654321", doy:"ΔΟΥ Πειραιά",
-    address:"Σταδίου 25, Πειραιάς", email:"info@alfa.gr", phone:"2100000002", type:"business" },
+    address:"Σταδίου 25, Πειραιάς", email:"info@alfa.gr", phone:"2100000002", type:"business",
+    repName:"", repTitle:"" },
 ];
 
 const PKGS0 = [
@@ -45,13 +48,13 @@ const ARTICLES0 = [
     id: "a1", order: 1, type: "dynamic",
     title: "ΑΡΘΡΟ 1 — ΑΝΤΙΚΕΙΜΕΝΟ ΣΥΜΒΑΣΗΣ",
     content: "",
-    hint: "Συμπληρώνεται αυτόματα από τις επιλεγμένες υπηρεσίες",
+    hint: "§1.1 Γενικό Αντικείμενο + §1.2 Χαρακτήρας Συνεργασίας (σταθερό κείμενο)",
   },
   {
     id: "a2", order: 2, type: "dynamic",
-    title: "ΑΡΘΡΟ 2 — ΑΜΟΙΒΗ / REMUNERATION",
+    title: "ΑΡΘΡΟ 2 — ΠΑΡΕΧΟΜΕΝΕΣ ΥΠΗΡΕΣΙΕΣ & ΑΜΟΙΒΗ",
     content: "",
-    hint: "Συμπληρώνεται αυτόματα από την τιμή και τον τρόπο πληρωμής",
+    hint: "Συμπληρώνεται αυτόματα: πίνακας υπηρεσιών + τρόπος πληρωμής",
   },
   {
     id: "a3", order: 3, type: "dynamic",
@@ -62,13 +65,13 @@ const ARTICLES0 = [
   {
     id: "a4", order: 4, type: "static",
     title: "ΑΡΘΡΟ 4 — ΥΠΟΧΡΕΩΣΕΙΣ ΜΕΡΩΝ",
-    content: "Ο Εντολέας υποχρεούται να χορηγεί έγκαιρα τα απαραίτητα παραστατικά και στοιχεία που απαιτούνται για την εκτέλεση των εργασιών.\n\nΟ Ανάδοχος υποχρεούται να τηρεί εχεμύθεια ως προς τα οικονομικά στοιχεία και δεδομένα του Εντολέα.",
+    content: "Η «ΕΠΙΧΕΙΡΗΣΗ» υποχρεούται να χορηγεί έγκαιρα τα απαραίτητα παραστατικά και στοιχεία που απαιτούνται για την εκτέλεση των εργασιών.\n\nΟ «ΣΥΝΕΡΓΑΤΗΣ» υποχρεούται να τηρεί εχεμύθεια ως προς τα οικονομικά στοιχεία και δεδομένα της «ΕΠΙΧΕΙΡΗΣΗΣ».",
     hint: "",
   },
   {
     id: "a5", order: 5, type: "static",
     title: "ΑΡΘΡΟ 5 — ΛΥΣΗ ΣΥΜΒΑΣΗΣ",
-    content: "Η σύμβαση δύναται να καταγγελθεί από οποιοδήποτε μέρος με έγγραφη ειδοποίηση τριάντα (30) ημερών. Σε περίπτωση καταγγελίας, ο Εντολέας υποχρεούται να εξοφλήσει τις οφειλόμενες αμοιβές μέχρι την ημερομηνία λύσης της σύμβασης.",
+    content: "Η σύμβαση δύναται να καταγγελθεί από οποιοδήποτε μέρος με έγγραφη ειδοποίηση τριάντα (30) ημερών. Σε περίπτωση καταγγελίας, η «ΕΠΙΧΕΙΡΗΣΗ» υποχρεούται να εξοφλήσει τις οφειλόμενες αμοιβές μέχρι την ημερομηνία λύσης της σύμβασης.",
     hint: "",
   },
   {
@@ -86,7 +89,7 @@ const ARTICLES0 = [
 ];
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
-const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"" });
+const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"", qty:"1" });
 
 /* ─── Supabase data layer ───────────────────────────────────────────────── */
 // Set in Vercel → Settings → Environment Variables:
@@ -163,16 +166,20 @@ function nextNo(hist, type) {
 function calcLine(line, packages) {
   const pkg = packages.find(p => p.id === line.pkgId);
   if (!pkg) return null;
-  const net  = parseFloat(line.customPrice || pkg.price) || 0;
-  const vatR = pkg.vat ?? 24;
-  const vat  = +(net * vatR / 100).toFixed(2);
+  const qty      = Math.max(1, parseInt(line.qty) || 1);
+  const unitNet  = parseFloat(line.customPrice || pkg.price) || 0;
+  const net      = +(unitNet * qty).toFixed(2);
+  const vatR     = pkg.vat ?? 24;
+  const vat      = +(net * vatR / 100).toFixed(2);
   return {
     pkg,
-    net:   net.toFixed(2),
-    vat:   vat.toFixed(2),
-    total: (net + vat).toFixed(2),
+    qty,
+    unitNet: unitNet.toFixed(2),
+    net:     net.toFixed(2),
+    vat:     vat.toFixed(2),
+    total:   (net + vat).toFixed(2),
     vatR,
-    desc:  line.customDesc || pkg.desc,
+    desc:    line.customDesc || pkg.desc,
   };
 }
 
@@ -233,6 +240,10 @@ function buildDocHtml(d, logo) {
       "<td style='padding:5px 10px;font-size:9pt;border-bottom:1px solid #D0E0EF;" +
         "color:#555;'>" + xe(l.desc) + "</td>" +
       "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
+        "text-align:right;'>" + l.qty + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
+        "text-align:right;'>" + xe(l.unitNet) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
         "text-align:right;'>" + xe(l.net) + "</td>" +
       "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
         "text-align:right;'>" + l.vatR + "%</td>" +
@@ -245,16 +256,18 @@ function buildDocHtml(d, logo) {
   const svcTable = (
     "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>" +
     "<thead><tr style='background:#1A3C5E;color:white;'>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:12%;'>Κωδικός</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:33%;'>Υπηρεσία</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:10%;'>Κωδικός</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:28%;'>Υπηρεσία</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;'>Περιγραφή</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:12%;'>Net €</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:10%;'>ΦΠΑ%</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:13%;'>Σύνολο €</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:6%;'>Τεμ.</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:10%;'>Τιμή €</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:10%;'>Net €</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:9%;'>ΦΠΑ%</td>" +
+    "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:12%;'>Σύνολο €</td>" +
     "</tr></thead>" +
     "<tbody>" + svcRows + "</tbody>" +
     "<tfoot><tr style='background:#1A3C5E;color:white;'>" +
-    "<td colspan='3' style='padding:6px 10px;font-size:10.5pt;font-weight:700;'>ΣΥΝΟΛΟ / TOTAL</td>" +
+    "<td colspan='5' style='padding:6px 10px;font-size:10.5pt;font-weight:700;'>ΣΥΝΟΛΟ / TOTAL</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;text-align:right;'>Net: " + xe(totalNet) + " €</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;text-align:right;'>ΦΠΑ: " + xe(totalVat) + " €</td>" +
     "<td style='padding:6px 10px;font-size:10.5pt;font-weight:700;text-align:right;'>" + xe(totalGross) + " €</td>" +
@@ -314,15 +327,28 @@ function buildDocHtml(d, logo) {
       "</div>" +
       sigTable(firm.name, "");
   } else {
-    const partyARows = [
-      ["Α) Ανάδοχος",        firm.name + "  |  ΑΦΜ: " + firm.afm + "  |  " + firm.doy],
-      ["Διεύθυνση Αναδόχου", firm.address],
-      ["Β) Εντολέας",        client.name + "  |  ΑΦΜ: " + client.afm + "  |  " + client.doy],
-      ["Διεύθυνση Εντολέα",  client.address],
-    ];
+    const city = firm.city || "Θεσσαλονίκη";
 
-    const allArts   = d.articles || ARTICLES0;
-    const arts      = allArts.filter(a => a.id !== "a-close").sort((a,b) => a.order - b.order);
+    // Party A: Συνεργάτης (firm)
+    const partyARows = [
+      ["Α) Συνεργάτης",           firm.name + "  |  ΑΦΜ: " + firm.afm + "  |  " + firm.doy],
+      ["Διεύθυνση Συνεργάτη",     firm.address],
+    ];
+    if (firm.repName) {
+      partyARows.push(["Εκπρόσωπος Συνεργάτη", firm.repName + (firm.repTitle ? ", " + firm.repTitle : "")]);
+    }
+
+    // Party B: Επιχείρηση (client)
+    const partyBRows = [
+      ["Β) Επιχείρηση",           client.name + "  |  ΑΦΜ: " + client.afm + "  |  " + client.doy],
+      ["Διεύθυνση Επιχείρησης",   client.address],
+    ];
+    if (client.repName) {
+      partyBRows.push(["Εκπρόσωπος Επιχείρησης", client.repName + (client.repTitle ? ", " + client.repTitle : "")]);
+    }
+
+    const allArts    = d.articles || ARTICLES0;
+    const arts       = allArts.filter(a => a.id !== "a-close").sort((a,b) => a.order - b.order);
     const closingArt = allArts.find(a => a.id === "a-close");
 
     let articlesHtml = "";
@@ -330,17 +356,24 @@ function buildDocHtml(d, logo) {
       articlesHtml += sec(art.title);
       if (art.type === "dynamic") {
         if (art.id === "a1") {
-          articlesHtml += svcTable;
+          // Article 1: General subject text + character (NO table here)
+          articlesHtml +=
+            "<p style='font-size:10pt;font-weight:700;color:#1A3C5E;margin:10px 0 4px;'>1.1. ΓΕΝΙΚΟ ΑΝΤΙΚΕΙΜΕΝΟ</p>" +
+            pp("Με την παρούσα σύμβαση, ο «ΣΥΝΕΡΓΑΤΗΣ» αναλαμβάνει την παροχή ανεξάρτητων λογιστικών και φοροτεχνικών υπηρεσιών προς την «ΕΠΙΧΕΙΡΗΣΗ», σύμφωνα με την κείμενη ελληνική και ευρωπαϊκή νομοθεσία, τους κανόνες δεοντολογίας του λογιστικού επαγγέλματος και τους όρους του παρόντος συμφωνητικού.") +
+            "<p style='font-size:10pt;font-weight:700;color:#1A3C5E;margin:10px 0 4px;'>1.2. ΧΑΡΑΚΤΗΡΑΣ ΣΥΝΕΡΓΑΣΙΑΣ</p>" +
+            pp("Ο «ΣΥΝΕΡΓΑΤΗΣ» ενεργεί ως ανεξάρτητος επαγγελματίας και όχι ως υπάλληλος της «ΕΠΙΧΕΙΡΗΣΗΣ». Η σχέση των μερών διέπεται από τις διατάξεις περί εντολής του Αστικού Κώδικα.");
         } else if (art.id === "a2") {
-          articlesHtml += pp("Τρόπος πληρωμής / Payment: " + payMethod);
+          // Article 2: Services table + payment
+          articlesHtml += svcTable;
+          articlesHtml += pp("Τρόπος πληρωμής: " + payMethod);
         } else if (art.id === "a3") {
-          articlesHtml += pp("Έναρξη / Start: " + fmtD(startDate));
-          articlesHtml += pp("Διάρκεια / Duration: " + duration);
+          articlesHtml += pp("Έναρξη: " + fmtD(startDate));
+          articlesHtml += pp("Διάρκεια: " + duration);
           articlesHtml += pp("Η σύμβαση παρατείνεται αυτόματα εκτός εάν καταγγελθεί εγγράφως με 30 ημέρες προειδοποίηση.");
         }
       } else {
-        (art.content || "").split("\n").filter(t => t.trim()).forEach(function(line) {
-          articlesHtml += pp(line);
+        (art.content || "").split("\n").filter(t => t.trim()).forEach(function(ln) {
+          articlesHtml += pp(ln);
         });
       }
     });
@@ -353,12 +386,13 @@ function buildDocHtml(d, logo) {
       : "Το παρόν συντάχθηκε σε δύο (2) αντίτυπα και κάθε συμβαλλόμενος έλαβε από ένα (1) πρωτότυπο.";
 
     body =
-      pp("Στην Αθήνα, σήμερα " + fmtD(docDate) + ", μεταξύ των:") +
+      pp("Στη " + city + ", σήμερα " + fmtD(docDate) + ", μεταξύ των:") +
       infoBox(partyARows) +
+      infoBox(partyBRows) +
       pp("συμφωνήθηκαν και έγιναν αμοιβαία αποδεκτά τα εξής:", "font-style:italic;color:#555;") +
       articlesHtml +
       pp(closingText, "font-style:italic;color:#555;margin-top:20px;") +
-      sigTable("Ο ΑΝΑΔΟΧΟΣ", "Ο ΕΝΤΟΛΕΑΣ");
+      sigTable("Ο ΣΥΝΕΡΓΑΤΗΣ", "Η ΕΠΙΧΕΙΡΗΣΗ");
   }
 
   const css = [
@@ -777,8 +811,9 @@ function ServiceLines({ lines, setLines, packages }) {
       {lines.map((line, i) => {
         const pkg  = packages.find(p => p.id === line.pkgId);
         const net  = parseFloat(line.customPrice || pkg?.price || 0);
+        const qty  = parseInt(line.qty) || 1;
         const vatR = pkg?.vat ?? 24;
-        const tot  = +(net * (1 + vatR / 100)).toFixed(2);
+        const tot  = +(net * qty * (1 + vatR / 100)).toFixed(2);
 
         return (
           <div key={line.id} style={{
@@ -816,20 +851,35 @@ function ServiceLines({ lines, setLines, packages }) {
                 <div>
                   <div style={{ fontSize:11, fontWeight:700, color:NAVY,
                     textTransform:"uppercase", letterSpacing:.5, marginBottom:4 }}>
-                    Τιμή Net (€) — κενό = τιμή πακέτου
+                    Τιμή Net / Μονάδα (€) — κενό = τιμή πακέτου
                   </div>
                   <input style={inpStyle} type="number"
                     value={line.customPrice}
                     onChange={e => updateLine(line.id, "customPrice", e.target.value)}
                     placeholder={String(pkg.price)} />
                 </div>
-                <div style={{ display:"flex", alignItems:"flex-end" }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:NAVY,
+                    textTransform:"uppercase", letterSpacing:.5, marginBottom:4 }}>
+                    Τεμάχια / Ποσότητα
+                  </div>
+                  <input style={inpStyle} type="number" min="1"
+                    value={line.qty || "1"}
+                    onChange={e => updateLine(line.id, "qty", e.target.value)}
+                    placeholder="1" />
+                </div>
+                <div style={{ gridColumn:"1/-1", display:"flex", alignItems:"center" }}>
                   <div style={{ background:GREENL, border:"1px solid #68D391",
                     borderRadius:6, padding:"8px 12px", fontSize:12, width:"100%" }}>
-                    <span style={{ color:MUTED }}>Net: </span>
+                    <span style={{ color:MUTED }}>Τιμή μονάδας: </span>
                     <strong>{net.toFixed(2)}€</strong>
+                    <span style={{ color:MUTED, margin:"0 6px" }}>×</span>
+                    <strong>{parseInt(line.qty)||1} τεμ.</strong>
+                    <span style={{ color:MUTED, margin:"0 6px" }}>=</span>
+                    <span style={{ color:MUTED }}>Net: </span>
+                    <strong>{(net*(parseInt(line.qty)||1)).toFixed(2)}€</strong>
                     <span style={{ color:MUTED, margin:"0 4px" }}>+ ΦΠΑ {vatR}%:</span>
-                    <strong>{(net * vatR / 100).toFixed(2)}€</strong>
+                    <strong>{(net*(parseInt(line.qty)||1)*vatR/100).toFixed(2)}€</strong>
                     <span style={{ margin:"0 4px", color:MUTED }}>=</span>
                     <strong style={{ color:GREEN }}>{tot}€</strong>
                   </div>
@@ -911,7 +961,7 @@ export default function App() {
   const [hFilt,       setHFilt]       = useState("all");
   const [hQ,          setHQ]          = useState("");
 
-  const [cf, setCf] = useState({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business" });
+  const [cf, setCf] = useState({ name:"", afm:"", doy:"", address:"", email:"", phone:"", type:"business", repName:"", repTitle:"" });
   const [pf, setPf] = useState({ code:"", name:"", desc:"", price:"", vat:"24" });
   const [ff, setFf] = useState(FIRM0);
   const logoRef = useRef();
@@ -1825,6 +1875,21 @@ export default function App() {
               <input style={inpStyle} value={cf.phone}
                 onChange={e => setCf({ ...cf, phone:e.target.value })} />
             </Lbl>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid "+BORDER, paddingTop:12, marginTop:4 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:NAVY, marginBottom:10 }}>
+                Εκπρόσωπος Επιχείρησης — προαιρετικό (εμφανίζεται στο Συμφωνητικό μόνο αν συμπληρωθεί)
+              </div>
+            </div>
+            <Lbl t="Ονοματεπώνυμο Εκπροσώπου">
+              <input style={inpStyle} value={cf.repName || ""}
+                onChange={e => setCf({ ...cf, repName:e.target.value })}
+                placeholder="Προαιρετικό" />
+            </Lbl>
+            <Lbl t="Ιδιότητα / Τίτλος">
+              <input style={inpStyle} value={cf.repTitle || ""}
+                onChange={e => setCf({ ...cf, repTitle:e.target.value })}
+                placeholder="π.χ. Διευθύνων Σύμβουλος" />
+            </Lbl>
           </div>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:18 }}>
             <Btn variant="ghost" onClick={() => setShowCM(false)}>Ακύρωση</Btn>
@@ -2028,9 +2093,18 @@ export default function App() {
               <input style={inpStyle} value={ff.doy}
                 onChange={e => setFf({ ...ff, doy:e.target.value })} />
             </Lbl>
+            <Lbl t="Πόλη Έδρας (για Συμφωνητικό)">
+              <input style={inpStyle} value={ff.city || ""}
+                onChange={e => setFf({ ...ff, city:e.target.value })}
+                placeholder="π.χ. Θεσσαλονίκη" />
+            </Lbl>
             <Lbl t="Τηλέφωνο">
               <input style={inpStyle} value={ff.phone}
                 onChange={e => setFf({ ...ff, phone:e.target.value })} />
+            </Lbl>
+            <Lbl t="Email">
+              <input style={inpStyle} value={ff.email}
+                onChange={e => setFf({ ...ff, email:e.target.value })} />
             </Lbl>
             <div style={{ gridColumn:"1/-1" }}>
               <Lbl t="Διεύθυνση">
@@ -2038,12 +2112,21 @@ export default function App() {
                   onChange={e => setFf({ ...ff, address:e.target.value })} />
               </Lbl>
             </div>
-            <div style={{ gridColumn:"1/-1" }}>
-              <Lbl t="Email">
-                <input style={inpStyle} value={ff.email}
-                  onChange={e => setFf({ ...ff, email:e.target.value })} />
-              </Lbl>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid "+BORDER, paddingTop:12, marginTop:4 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:NAVY, marginBottom:10 }}>
+                Εκπρόσωπος Συνεργάτη (εμφανίζεται στο Συμφωνητικό)
+              </div>
             </div>
+            <Lbl t="Ονοματεπώνυμο Εκπροσώπου">
+              <input style={inpStyle} value={ff.repName || ""}
+                onChange={e => setFf({ ...ff, repName:e.target.value })}
+                placeholder="π.χ. Γιάννης Παπαδόπουλος" />
+            </Lbl>
+            <Lbl t="Ιδιότητα / Τίτλος">
+              <input style={inpStyle} value={ff.repTitle || ""}
+                onChange={e => setFf({ ...ff, repTitle:e.target.value })}
+                placeholder="π.χ. Λογιστής Φοροτεχνικός" />
+            </Lbl>
           </div>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:18 }}>
             <Btn variant="ghost" onClick={() => setShowFM(false)}>Ακύρωση</Btn>
