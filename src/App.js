@@ -89,7 +89,7 @@ const ARTICLES0 = [
 ];
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
-const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"", qty:"1" });
+const newLine  = () => ({ id:"l"+Date.now()+Math.random(), pkgId:"", customPrice:"", customDesc:"", qty:"1", periodicity:"μηνιαία" });
 
 /* ─── Supabase data layer ───────────────────────────────────────────────── */
 // Set in Vercel → Settings → Environment Variables:
@@ -174,12 +174,13 @@ function calcLine(line, packages) {
   return {
     pkg,
     qty,
-    unitNet: unitNet.toFixed(2),
-    net:     net.toFixed(2),
-    vat:     vat.toFixed(2),
-    total:   (net + vat).toFixed(2),
+    unitNet:     unitNet.toFixed(2),
+    net:         net.toFixed(2),
+    vat:         vat.toFixed(2),
+    total:       (net + vat).toFixed(2),
     vatR,
-    desc:    line.customDesc || pkg.desc,
+    desc:        line.customDesc || pkg.desc,
+    periodicity: line.periodicity || "μηνιαία",
   };
 }
 
@@ -200,7 +201,7 @@ function calcTotals(lines, packages) {
 function buildDocHtml(d, logo) {
   const {
     docType, docNo, docDate, firm, client,
-    lines, packages, payMethod, validDays,
+    lines, packages, validDays,
     startDate, duration, notes,
   } = d;
 
@@ -229,32 +230,16 @@ function buildDocHtml(d, logo) {
   }
 
   /* services table */
-  const svcRows = calced.map(function(l, i) {
-    const bg = i % 2 === 0 ? "#FAFCFF" : "#EBF4FB";
-    return (
-      "<tr style='background:" + bg + ";'>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "color:#2A7FBF;font-weight:600;'>" + xe(l.pkg.code || "") + "</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "font-weight:600;'>" + xe(l.pkg.name) + "</td>" +
-      "<td style='padding:5px 10px;font-size:9pt;border-bottom:1px solid #D0E0EF;" +
-        "color:#555;'>" + xe(l.desc) + "</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "text-align:right;'>" + l.qty + "</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "text-align:right;'>" + xe(l.unitNet) + "</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "text-align:right;'>" + xe(l.net) + "</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "text-align:right;'>" + l.vatR + "%</td>" +
-      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;" +
-        "text-align:right;font-weight:600;'>" + xe(l.total) + "</td>" +
-      "</tr>"
-    );
-  }).join("");
+  // Group calced lines by periodicity
+  var PERIOD_ORDER = ["μηνιαία", "τριμηνιαία", "ετήσια", "εφάπαξ"];
+  var PERIOD_LABELS = {
+    "μηνιαία":    "Μηνιαίες Υπηρεσίες",
+    "τριμηνιαία": "Τριμηνιαίες Υπηρεσίες",
+    "ετήσια":     "Ετήσιες Υπηρεσίες",
+    "εφάπαξ":     "Εφάπαξ Υπηρεσίες / Πάγια",
+  };
 
-  const svcTable = (
-    "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>" +
+  var theadRow = (
     "<thead><tr style='background:#1A3C5E;color:white;'>" +
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:10%;'>Κωδικός</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;width:28%;'>Υπηρεσία</td>" +
@@ -264,14 +249,66 @@ function buildDocHtml(d, logo) {
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:10%;'>Net €</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:9%;'>ΦΠΑ%</td>" +
     "<td style='padding:6px 10px;font-size:9.5pt;font-weight:700;text-align:right;width:12%;'>Σύνολο €</td>" +
-    "</tr></thead>" +
-    "<tbody>" + svcRows + "</tbody>" +
-    "<tfoot><tr style='background:#1A3C5E;color:white;'>" +
-    "<td colspan='5' style='padding:6px 10px;font-size:10.5pt;font-weight:700;'>ΣΥΝΟΛΟ / TOTAL</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;text-align:right;'>Net: " + xe(totalNet) + " €</td>" +
-    "<td style='padding:6px 10px;font-size:9.5pt;text-align:right;'>ΦΠΑ: " + xe(totalVat) + " €</td>" +
-    "<td style='padding:6px 10px;font-size:10.5pt;font-weight:700;text-align:right;'>" + xe(totalGross) + " €</td>" +
-    "</tr></tfoot></table>"
+    "</tr></thead>"
+  );
+
+  function makeLineRow(l, i) {
+    var bg = i % 2 === 0 ? "#FAFCFF" : "#EBF4FB";
+    return (
+      "<tr style='background:" + bg + ";'>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;color:#2A7FBF;font-weight:600;'>" + xe(l.pkg.code || "") + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;font-weight:600;'>" + xe(l.pkg.name) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9pt;border-bottom:1px solid #D0E0EF;color:#555;'>" + xe(l.desc) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;text-align:right;'>" + l.qty + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;text-align:right;'>" + xe(l.unitNet) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;text-align:right;'>" + xe(l.net) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;text-align:right;'>" + l.vatR + "%</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-bottom:1px solid #D0E0EF;text-align:right;font-weight:600;'>" + xe(l.total) + "</td>" +
+      "</tr>"
+    );
+  }
+
+  // Build one table per periodicity group (only groups that have lines)
+  var svcTable = "";
+  PERIOD_ORDER.forEach(function(period) {
+    var group = calced.filter(function(l) { return (l.periodicity || "μηνιαία") === period; });
+    if (group.length === 0) return;
+
+    var gNet   = group.reduce(function(s,l) { return s + parseFloat(l.net);   }, 0);
+    var gVat   = group.reduce(function(s,l) { return s + parseFloat(l.vat);   }, 0);
+    var gTotal = group.reduce(function(s,l) { return s + parseFloat(l.total); }, 0);
+
+    svcTable += (
+      "<div style='margin-bottom:4px;font-size:9.5pt;font-weight:700;color:#2A7FBF;" +
+        "text-transform:uppercase;letter-spacing:.5px;margin-top:10px;'>" +
+        (PERIOD_LABELS[period] || period) + "</div>" +
+      "<table style='width:100%;border-collapse:collapse;margin-bottom:8px;'>" +
+      theadRow +
+      "<tbody>" +
+      group.map(function(l, i) { return makeLineRow(l, i); }).join("") +
+      "</tbody>" +
+      "<tfoot><tr style='background:#EBF4FB;'>" +
+      "<td colspan='5' style='padding:5px 10px;font-size:9.5pt;font-weight:700;color:#1A3C5E;" +
+        "border-top:2px solid #2A7FBF;'>Υποσύνολο " + (PERIOD_LABELS[period] || period) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-top:2px solid #2A7FBF;text-align:right;'>" +
+        gNet.toFixed(2) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;border-top:2px solid #2A7FBF;text-align:right;'>" +
+        gVat.toFixed(2) + "</td>" +
+      "<td style='padding:5px 10px;font-size:9.5pt;font-weight:700;color:#1A3C5E;" +
+        "border-top:2px solid #2A7FBF;text-align:right;'>" + gTotal.toFixed(2) + " €</td>" +
+      "</tr></tfoot></table>"
+    );
+  });
+
+  // Grand total row
+  svcTable += (
+    "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>" +
+    "<tr style='background:#1A3C5E;color:white;'>" +
+    "<td colspan='5' style='padding:7px 10px;font-size:10.5pt;font-weight:700;'>ΓΕΝΙΚΟ ΣΥΝΟΛΟ / GRAND TOTAL</td>" +
+    "<td style='padding:7px 10px;font-size:9.5pt;text-align:right;'>Net: " + xe(totalNet) + " €</td>" +
+    "<td style='padding:7px 10px;font-size:9.5pt;text-align:right;'>ΦΠΑ: " + xe(totalVat) + " €</td>" +
+    "<td style='padding:7px 10px;font-size:10.5pt;font-weight:700;text-align:right;'>" + xe(totalGross) + " €</td>" +
+    "</tr></table>"
   );
 
   function sec(t) {
@@ -318,7 +355,7 @@ function buildDocHtml(d, logo) {
       pp("Σας υποβάλλουμε την παρούσα προσφορά για την παροχή λογιστικών υπηρεσιών:") +
       sec("ΑΝΑΛΥΣΗ ΥΠΗΡΕΣΙΩΝ / SERVICES") +
       svcTable +
-      pp("Τρόπος Πληρωμής / Payment: " + payMethod) +
+  
       pp("Ισχύς Προσφοράς / Validity: " + validDays + " ημέρες από " + fmtD(docDate)) +
       (notes ? sec("ΠΑΡΑΤΗΡΗΣΕΙΣ / NOTES") + pp(notes) : "") +
       "<div style='margin-top:28px;'>" +
@@ -365,7 +402,7 @@ function buildDocHtml(d, logo) {
         } else if (art.id === "a2") {
           // Article 2: Services table + payment + optional extra text
           articlesHtml += svcTable;
-          articlesHtml += pp("Τρόπος πληρωμής: " + payMethod);
+
           if (d.a2Notes) articlesHtml += pp(d.a2Notes, "margin-top:8px;color:#444;");
         } else if (art.id === "a3") {
           articlesHtml += pp("Έναρξη: " + fmtD(startDate));
@@ -869,9 +906,22 @@ function ServiceLines({ lines, setLines, packages }) {
                     onChange={e => updateLine(line.id, "qty", e.target.value)}
                     placeholder="1" />
                 </div>
-                <div style={{ gridColumn:"1/-1", display:"flex", alignItems:"center" }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:NAVY,
+                    textTransform:"uppercase", letterSpacing:.5, marginBottom:4 }}>
+                    Περιοδικότητα Πληρωμής
+                  </div>
+                  <select style={selStyle}
+                    value={line.periodicity || "μηνιαία"}
+                    onChange={e => updateLine(line.id, "periodicity", e.target.value)}>
+                    {["μηνιαία","τριμηνιαία","ετήσια","εφάπαξ"].map(p => (
+                      <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ gridColumn:"1/-1", display:"flex", alignItems:"center", gap:8 }}>
                   <div style={{ background:GREENL, border:"1px solid #68D391",
-                    borderRadius:6, padding:"8px 12px", fontSize:12, width:"100%" }}>
+                    borderRadius:6, padding:"8px 12px", fontSize:12, flex:1 }}>
                     <span style={{ color:MUTED }}>Τιμή μονάδας: </span>
                     <strong>{net.toFixed(2)}€</strong>
                     <span style={{ color:MUTED, margin:"0 6px" }}>×</span>
@@ -884,6 +934,11 @@ function ServiceLines({ lines, setLines, packages }) {
                     <span style={{ margin:"0 4px", color:MUTED }}>=</span>
                     <strong style={{ color:GREEN }}>{tot}€</strong>
                   </div>
+                  <span style={{ background:LIGHT, color:ACCENT, border:"1px solid "+ACCENT,
+                    borderRadius:12, padding:"3px 10px", fontSize:11, fontWeight:700,
+                    whiteSpace:"nowrap" }}>
+                    {line.periodicity || "μηνιαία"}
+                  </span>
                 </div>
                 <div style={{ gridColumn:"1/-1" }}>
                   <div style={{ fontSize:11, fontWeight:700, color:NAVY,
@@ -904,23 +959,30 @@ function ServiceLines({ lines, setLines, packages }) {
       {hasAny && (
         <div style={{ background:LIGHT, border:"1px solid "+ACCENT,
           borderRadius:7, padding:"12px 16px", marginTop:4 }}>
-          <div style={{ fontSize:11, color:MUTED, marginBottom:6,
+          <div style={{ fontSize:11, color:MUTED, marginBottom:8,
             textTransform:"uppercase", letterSpacing:.5 }}>
-            Σύνολο εγγράφου
+            Σύνολο ανά Περιοδικότητα
           </div>
-          <div style={{ display:"flex", gap:20, fontSize:13 }}>
-            <span>
-              <span style={{ color:MUTED }}>Net: </span>
-              <strong>{totalNet} €</strong>
-            </span>
-            <span>
-              <span style={{ color:MUTED }}>ΦΠΑ: </span>
-              <strong>{totalVat} €</strong>
-            </span>
-            <span style={{ marginLeft:"auto" }}>
-              <span style={{ color:MUTED }}>ΣΥΝΟΛΟ: </span>
-              <strong style={{ color:NAVY, fontSize:15 }}>{totalGross} €</strong>
-            </span>
+          {["μηνιαία","τριμηνιαία","ετήσια","εφάπαξ"].map(period => {
+            const grp = lines.filter(l => l.pkgId && (l.periodicity||"μηνιαία") === period);
+            if (!grp.length) return null;
+            const grpTot = grp.reduce((s,l) => {
+              const cl = calcLine(l, packages);
+              return cl ? s + parseFloat(cl.total) : s;
+            }, 0);
+            return (
+              <div key={period} style={{ display:"flex", justifyContent:"space-between",
+                fontSize:12, marginBottom:4 }}>
+                <span style={{ color:MUTED, textTransform:"capitalize" }}>{period}:</span>
+                <strong>{grpTot.toFixed(2)} €</strong>
+              </div>
+            );
+          })}
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:14,
+            fontWeight:700, color:NAVY, borderTop:"1px solid "+ACCENT,
+            paddingTop:6, marginTop:4 }}>
+            <span>ΓΕΝΙΚΟ ΣΥΝΟΛΟ:</span>
+            <strong>{totalGross} €</strong>
           </div>
         </div>
       )}
@@ -957,8 +1019,7 @@ export default function App() {
   const [importPreview, setImportPreview] = useState(null);
   const [editingClient, setEditingClient] = useState(null); // client id being edited
   const [a2Notes,     setA2Notes]     = useState(""); // extra text for Article 2
-  const [payMethodP,  setPayMethodP]  = useState("μηνιαίως"); // Prosfora payment
-  const [payMethodS,  setPayMethodS]  = useState("μηνιαίως"); // Symfonito payment
+
   const [editingPkg,  setEditingPkg]  = useState(null);
   const [editDoc,     setEditDoc]     = useState(null);
   const [status,      setStatus]      = useState({ msg:"", type:"" });
@@ -1062,7 +1123,6 @@ export default function App() {
         lines:     histDoc.lines || [],
         packages,
         articles,
-        payMethod: histDoc.payMethod  || "μηνιαίως",
         a2Notes:   histDoc.a2Notes   || "",
         validDays: histDoc.validDays  || "30",
         startDate: histDoc.startDate  || histDoc.date,
@@ -1070,9 +1130,8 @@ export default function App() {
         notes:     histDoc.notes      || "",
       };
     }
-    const payMethod = docType === "prosfora" ? payMethodP : payMethodS;
     return { docType, docNo, docDate, firm, client, lines, packages, articles,
-             payMethod, validDays, startDate, duration, notes, a2Notes };
+             validDays, startDate, duration, notes, a2Notes };
   }
 
   function openPdf(histDoc=null) {
@@ -1090,7 +1149,6 @@ export default function App() {
       type:       docType, docNo,
       clientName: client.name, clientId,
       lines, totalGross,
-      payMethod: docType === "prosfora" ? payMethodP : payMethodS,
       validDays,
       startDate, duration, notes, a2Notes,
       date:       docDate,
@@ -1125,8 +1183,6 @@ export default function App() {
     setDocType(doc.type);
     setClientId(doc.clientId);
     setLines(doc.lines && doc.lines.length > 0 ? doc.lines : [newLine()]);
-    if (doc.type === "prosfora") setPayMethodP(doc.payMethod || "μηνιαίως");
-    else setPayMethodS(doc.payMethod || "μηνιαίως");
     setA2Notes(doc.a2Notes || "");
     setValidDays(doc.validDays  || "30");
     setStartDate(doc.startDate  || doc.date);
@@ -1337,23 +1393,7 @@ export default function App() {
                     <input style={inpStyle} type="date" value={docDate}
                       onChange={e => setDocDate(e.target.value)} />
                   </Lbl>
-                  {docType === "prosfora" ? (
-                    <Lbl t="Τρόπος Πληρωμής (Προσφορά)">
-                      <select style={selStyle} value={payMethodP}
-                        onChange={e => setPayMethodP(e.target.value)}>
-                        {["μηνιαίως","τριμηνιαίως","εξαμηνιαίως","ετησίως","εφάπαξ"]
-                          .map(o => <option key={o}>{o}</option>)}
-                      </select>
-                    </Lbl>
-                  ) : (
-                    <Lbl t="Τρόπος Πληρωμής (Συμφωνητικό)">
-                      <select style={selStyle} value={payMethodS}
-                        onChange={e => setPayMethodS(e.target.value)}>
-                        {["μηνιαίως","τριμηνιαίως","εξαμηνιαίως","ετησίως","εφάπαξ"]
-                          .map(o => <option key={o}>{o}</option>)}
-                      </select>
-                    </Lbl>
-                  )}
+
                   {docType === "prosfora" ? (
                     <Lbl t="Ισχύς (ημέρες)">
                       <input style={inpStyle} type="number" value={validDays}
